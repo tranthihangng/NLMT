@@ -1,0 +1,1489 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solar Monitoring Dashboard</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <!-- Firebase SDK (modular v9+) -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getDatabase, ref, get, onValue } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+        
+        // ================== CẤU HÌNH FIREBASE ==================
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY_HERE",
+            authDomain: "nlmt-duy.firebaseapp.com",
+            databaseURL: "https://nlmt-duy-default-rtdb.firebaseio.com",
+            projectId: "nlmt-duy",
+            storageBucket: "nlmt-duy.appspot.com",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+        
+        // Khởi tạo Firebase
+        const app = initializeApp(firebaseConfig);
+        const database = getDatabase(app);
+        
+        // ================== BIẾN TOÀN CỤC ==================
+        let chartU = null;
+        let chartPower = null;
+        let chartTemp = null;
+        let chartLux = null;
+        let chartCurrent = null;
+        let chartHumi = null;
+        let autoRefreshInterval = null;
+        let lastData = [];
+        
+        // ================== CẤU HÌNH BIỂU ĐỒ ==================
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.borderColor = 'rgba(148, 163, 184, 0.1)';
+        Chart.defaults.font.family = "'JetBrains Mono', monospace";
+        
+        function getChartConfig(label, color, yLabel) {
+            return {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: label,
+                        data: [],
+                        borderColor: color,
+                        backgroundColor: color.replace(')', ', 0.1)').replace('rgb', 'rgba'),
+                        borderWidth: 2,
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 0,
+                        pointHoverRadius: 4,
+                        pointHoverBackgroundColor: color,
+                        pointHoverBorderColor: '#fff',
+                        pointHoverBorderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                            titleColor: '#f1f5f9',
+                            bodyColor: '#cbd5e1',
+                            borderColor: 'rgba(148, 163, 184, 0.2)',
+                            borderWidth: 1,
+                            padding: 12,
+                            cornerRadius: 8,
+                            displayColors: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { 
+                                maxTicksLimit: 8,
+                                font: { size: 10 }
+                            }
+                        },
+                        y: {
+                            grid: { 
+                                color: 'rgba(148, 163, 184, 0.08)',
+                                drawBorder: false
+                            },
+                            ticks: { font: { size: 10 } },
+                            title: {
+                                display: true,
+                                text: yLabel,
+                                font: { size: 11, weight: '500' }
+                            }
+                        }
+                    }
+                }
+            };
+        }
+        
+        // ================== KHỞI TẠO BIỂU ĐỒ ==================
+        function initCharts() {
+            chartU = new Chart(document.getElementById('chartU').getContext('2d'), 
+                getChartConfig('Voltage', 'rgb(34, 197, 94)', 'V'));
+            
+            chartCurrent = new Chart(document.getElementById('chartCurrent').getContext('2d'), 
+                getChartConfig('Current', 'rgb(59, 130, 246)', 'A'));
+            
+            chartPower = new Chart(document.getElementById('chartPower').getContext('2d'), 
+                getChartConfig('Power', 'rgb(249, 115, 22)', 'mW'));
+            
+            chartLux = new Chart(document.getElementById('chartLux').getContext('2d'), 
+                getChartConfig('Lux', 'rgb(250, 204, 21)', 'Lux'));
+            
+            chartTemp = new Chart(document.getElementById('chartTemp').getContext('2d'), 
+                getChartConfig('Temperature', 'rgb(239, 68, 68)', '°C'));
+            
+            chartHumi = new Chart(document.getElementById('chartHumi').getContext('2d'), 
+                getChartConfig('Humidity', 'rgb(6, 182, 212)', '%'));
+        }
+        
+        // ================== CẬP NHẬT METRIC CARDS ==================
+        function updateMetricCards(data) {
+            if (data.length === 0) return;
+            
+            const latest = data[data.length - 1];
+            const prev = data.length > 1 ? data[data.length - 2] : latest;
+            
+            // Cập nhật giá trị và trend
+            updateCard('voltage', latest.U, prev.U, 'V', 2);
+            updateCard('current', latest.Current, prev.Current, 'A', 3);
+            updateCard('power', latest.milliWatt, prev.milliWatt, 'mW', 2);
+            updateCard('energy', latest.energy, prev.energy, 'Wh', 2);
+            updateCard('lux', latest.Lux, prev.Lux, 'Lux', 0);
+            updateCard('temp', latest.Temp, prev.Temp, '°C', 1);
+            updateCard('humi', latest.Humi, prev.Humi, '%', 1);
+            
+            // Cập nhật thời gian
+            document.getElementById('lastUpdate').textContent = latest.time;
+        }
+        
+        function updateCard(id, current, previous, unit, decimals) {
+            const valueEl = document.getElementById(`${id}-value`);
+            const trendEl = document.getElementById(`${id}-trend`);
+            
+            valueEl.textContent = current.toFixed(decimals);
+            document.getElementById(`${id}-unit`).textContent = unit;
+            
+            const diff = current - previous;
+            const percent = previous !== 0 ? ((diff / previous) * 100).toFixed(1) : 0;
+            
+            if (diff > 0) {
+                trendEl.innerHTML = `<span class="trend-up">↑ +${percent}%</span>`;
+            } else if (diff < 0) {
+                trendEl.innerHTML = `<span class="trend-down">↓ ${percent}%</span>`;
+            } else {
+                trendEl.innerHTML = `<span class="trend-neutral">— 0%</span>`;
+            }
+        }
+        
+        // ================== TÍNH THỐNG KÊ ==================
+        function calculateStats(values) {
+            if (!values || values.length === 0) return { min: 0, max: 0, avg: 0 };
+            const filtered = values.filter(v => !isNaN(v) && v !== null);
+            if (filtered.length === 0) return { min: 0, max: 0, avg: 0 };
+            
+            return {
+                min: Math.min(...filtered),
+                max: Math.max(...filtered),
+                avg: filtered.reduce((a, b) => a + b, 0) / filtered.length
+            };
+        }
+        
+        function updateStats(data) {
+            if (data.length === 0) return;
+            
+            const stats = {
+                U: calculateStats(data.map(r => r.U)),
+                Current: calculateStats(data.map(r => r.Current)),
+                Power: calculateStats(data.map(r => r.milliWatt)),
+                Temp: calculateStats(data.map(r => r.Temp)),
+                Humi: calculateStats(data.map(r => r.Humi)),
+                Lux: calculateStats(data.map(r => r.Lux))
+            };
+            
+            document.getElementById('statsContent').innerHTML = `
+                <div class="stat-row">
+                    <span class="stat-label">Voltage</span>
+                    <span class="stat-values">
+                        <span class="stat-min">${stats.U.min.toFixed(2)}V</span>
+                        <span class="stat-avg">${stats.U.avg.toFixed(2)}V</span>
+                        <span class="stat-max">${stats.U.max.toFixed(2)}V</span>
+                    </span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Current</span>
+                    <span class="stat-values">
+                        <span class="stat-min">${stats.Current.min.toFixed(3)}A</span>
+                        <span class="stat-avg">${stats.Current.avg.toFixed(3)}A</span>
+                        <span class="stat-max">${stats.Current.max.toFixed(3)}A</span>
+                    </span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Power</span>
+                    <span class="stat-values">
+                        <span class="stat-min">${stats.Power.min.toFixed(2)}mW</span>
+                        <span class="stat-avg">${stats.Power.avg.toFixed(2)}mW</span>
+                        <span class="stat-max">${stats.Power.max.toFixed(2)}mW</span>
+                    </span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Temperature</span>
+                    <span class="stat-values">
+                        <span class="stat-min">${stats.Temp.min.toFixed(1)}°C</span>
+                        <span class="stat-avg">${stats.Temp.avg.toFixed(1)}°C</span>
+                        <span class="stat-max">${stats.Temp.max.toFixed(1)}°C</span>
+                    </span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Humidity</span>
+                    <span class="stat-values">
+                        <span class="stat-min">${stats.Humi.min.toFixed(1)}%</span>
+                        <span class="stat-avg">${stats.Humi.avg.toFixed(1)}%</span>
+                        <span class="stat-max">${stats.Humi.max.toFixed(1)}%</span>
+                    </span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Illuminance</span>
+                    <span class="stat-values">
+                        <span class="stat-min">${stats.Lux.min.toFixed(0)} Lux</span>
+                        <span class="stat-avg">${stats.Lux.avg.toFixed(0)} Lux</span>
+                        <span class="stat-max">${stats.Lux.max.toFixed(0)} Lux</span>
+                    </span>
+                </div>
+            `;
+        }
+        
+        // ================== HIỂN THỊ BẢNG ==================
+        function displayTable(data) {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+            
+            if (data.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="no-data">
+                            <div class="empty-state">
+                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <path d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                <p>No data available</p>
+                                <span>Select date and hour, then click Load</span>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            // Hiển thị theo thứ tự mới nhất trước
+            const reversed = [...data].reverse();
+            reversed.forEach((record, index) => {
+                const row = document.createElement('tr');
+                row.style.animationDelay = `${index * 0.02}s`;
+                row.innerHTML = `
+                    <td><span class="time-badge">${record.time}</span></td>
+                    <td><span class="value voltage">${record.U.toFixed(2)}</span></td>
+                    <td><span class="value current">${record.Current.toFixed(3)}</span></td>
+                    <td><span class="value power">${record.milliWatt.toFixed(2)}</span></td>
+                    <td><span class="value energy">${record.energy.toFixed(2)}</span></td>
+                    <td><span class="value lux">${record.Lux.toFixed(0)}</span></td>
+                    <td><span class="value temp">${record.Temp.toFixed(1)}</span></td>
+                    <td><span class="value humi">${record.Humi.toFixed(1)}</span></td>
+                `;
+                tbody.appendChild(row);
+            });
+            
+            document.getElementById('recordCount').textContent = data.length;
+        }
+        
+        // ================== CẬP NHẬT BIỂU ĐỒ ==================
+        function updateCharts(data) {
+            const labels = data.map(r => r.time);
+            
+            function updateChart(chart, values) {
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = values;
+                chart.update('none');
+            }
+            
+            updateChart(chartU, data.map(r => r.U));
+            updateChart(chartCurrent, data.map(r => r.Current));
+            updateChart(chartPower, data.map(r => r.milliWatt));
+            updateChart(chartLux, data.map(r => r.Lux));
+            updateChart(chartTemp, data.map(r => r.Temp));
+            updateChart(chartHumi, data.map(r => r.Humi));
+        }
+        
+        // ================== LOAD DỮ LIỆU ==================
+        async function loadData() {
+            const dateInput = document.getElementById('dateInput').value;
+            const hourInput = document.getElementById('hourInput').value;
+            
+            if (!dateInput || hourInput === '') {
+                showNotification('Please select date and hour', 'warning');
+                return;
+            }
+            
+            const hour = String(hourInput).padStart(2, '0');
+            setLoadingState(true);
+            
+            try {
+                const path = `/sensor_data/${dateInput}/${hour}`;
+                const dataRef = ref(database, path);
+                const snapshot = await get(dataRef);
+                
+                if (!snapshot.exists()) {
+                    showNotification('No data found for selected period', 'warning');
+                    displayTable([]);
+                    lastData = [];
+                    setLoadingState(false);
+                    return;
+                }
+                
+                const rawData = snapshot.val();
+                const dataArray = [];
+                
+                for (const timeKey in rawData) {
+                    const record = rawData[timeKey];
+                    dataArray.push({
+                        time: timeKey,
+                        U: record.U || 0,
+                        Current: record.Current || 0,
+                        milliWatt: record.milliWatt || 0,
+                        energy: record.energy || 0,
+                        Lux: record.Lux || 0,
+                        Temp: record.Temp || 0,
+                        Humi: record.Humi || 0
+                    });
+                }
+                
+                // Sort theo thời gian
+                dataArray.sort((a, b) => {
+                    const [ah, am, as] = a.time.split(':').map(Number);
+                    const [bh, bm, bs] = b.time.split(':').map(Number);
+                    return (ah * 3600 + am * 60 + as) - (bh * 3600 + bm * 60 + bs);
+                });
+                
+                lastData = dataArray;
+                
+                updateMetricCards(dataArray);
+                displayTable(dataArray);
+                updateCharts(dataArray);
+                updateStats(dataArray);
+                
+                showNotification(`Loaded ${dataArray.length} records`, 'success');
+                
+            } catch (error) {
+                console.error('Error:', error);
+                showNotification('Error: ' + error.message, 'error');
+            }
+            
+            setLoadingState(false);
+        }
+        
+        function setLoadingState(loading) {
+            const btn = document.getElementById('loadBtn');
+            const icon = document.getElementById('loadIcon');
+            
+            if (loading) {
+                btn.disabled = true;
+                icon.classList.add('spinning');
+                btn.querySelector('span').textContent = 'Loading...';
+            } else {
+                btn.disabled = false;
+                icon.classList.remove('spinning');
+                btn.querySelector('span').textContent = 'Load Data';
+            }
+        }
+        
+        function showNotification(message, type) {
+            const container = document.getElementById('notifications');
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.innerHTML = `
+                <span>${message}</span>
+                <button onclick="this.parentElement.remove()">×</button>
+            `;
+            container.appendChild(notification);
+            
+            setTimeout(() => notification.remove(), 4000);
+        }
+        
+        // ================== AUTO REFRESH ==================
+        function toggleAutoRefresh() {
+            const toggle = document.getElementById('autoRefreshToggle');
+            
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+                toggle.classList.remove('active');
+                showNotification('Auto-refresh disabled', 'info');
+            } else {
+                autoRefreshInterval = setInterval(loadData, 10000); // 10 giây
+                toggle.classList.add('active');
+                showNotification('Auto-refresh enabled (10s)', 'success');
+            }
+        }
+        
+        // ================== EXPORT DATA ==================
+        function exportData() {
+            if (lastData.length === 0) {
+                showNotification('No data to export', 'warning');
+                return;
+            }
+            
+            const headers = ['Time', 'Voltage(V)', 'Current(A)', 'Power(mW)', 'Energy(Wh)', 'Lux', 'Temp(°C)', 'Humidity(%)'];
+            const csvContent = [
+                headers.join(','),
+                ...lastData.map(r => [
+                    r.time, r.U, r.Current, r.milliWatt, r.energy, r.Lux, r.Temp, r.Humi
+                ].join(','))
+            ].join('\n');
+            
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `solar_data_${document.getElementById('dateInput').value}_${document.getElementById('hourInput').value}h.csv`;
+            link.click();
+            
+            showNotification('Data exported successfully', 'success');
+        }
+        
+        // ================== KHỞI TẠO ==================
+        window.addEventListener('DOMContentLoaded', () => {
+            initCharts();
+            
+            // Set default values
+            const now = new Date();
+            document.getElementById('dateInput').value = now.toISOString().split('T')[0];
+            document.getElementById('hourInput').value = now.getHours();
+            
+            // Event listeners
+            document.getElementById('loadBtn').addEventListener('click', loadData);
+            document.getElementById('autoRefreshToggle').addEventListener('click', toggleAutoRefresh);
+            document.getElementById('exportBtn').addEventListener('click', exportData);
+            
+            // Update clock
+            function updateClock() {
+                const now = new Date();
+                document.getElementById('currentTime').textContent = now.toLocaleTimeString('vi-VN');
+                document.getElementById('currentDate').textContent = now.toLocaleDateString('vi-VN', {
+                    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+                });
+            }
+            updateClock();
+            setInterval(updateClock, 1000);
+            
+            // Connection status
+            document.getElementById('connectionStatus').classList.add('connected');
+        });
+        
+        window.loadData = loadData;
+        window.toggleAutoRefresh = toggleAutoRefresh;
+        window.exportData = exportData;
+    </script>
+    
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #334155;
+            --bg-card: #1e293b;
+            --border-color: rgba(148, 163, 184, 0.1);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-green: #22c55e;
+            --accent-blue: #3b82f6;
+            --accent-orange: #f97316;
+            --accent-red: #ef4444;
+            --accent-yellow: #facc15;
+            --accent-cyan: #06b6d4;
+            --accent-purple: #a855f7;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        /* ============ HEADER ============ */
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(12px);
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--accent-yellow), var(--accent-orange));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+        
+        .logo h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-yellow), var(--accent-orange));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .logo p {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+        
+        .clock {
+            text-align: right;
+        }
+        
+        .clock .time {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .clock .date {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: var(--bg-tertiary);
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            animation: pulse 2s infinite;
+        }
+        
+        .connected .status-dot {
+            background: var(--accent-green);
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* ============ CONTROLS BAR ============ */
+        .controls-bar {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 16px 24px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: center;
+        }
+        
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .control-group label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+        
+        .control-group input {
+            padding: 10px 14px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        
+        .control-group input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+        
+        .control-group input[type="date"] {
+            width: 160px;
+        }
+        
+        .control-group input[type="number"] {
+            width: 80px;
+        }
+        
+        .btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
+        
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+        }
+        
+        .btn-secondary:hover {
+            background: var(--bg-card);
+            color: var(--text-primary);
+        }
+        
+        .btn-icon {
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            justify-content: center;
+        }
+        
+        .btn-icon.active {
+            background: var(--accent-green);
+            color: white;
+        }
+        
+        .spinning {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        .controls-spacer {
+            flex: 1;
+        }
+        
+        /* ============ MAIN CONTENT ============ */
+        .main-content {
+            padding: 24px;
+            display: grid;
+            gap: 24px;
+        }
+        
+        /* ============ METRIC CARDS ============ */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+        }
+        
+        .metric-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s;
+        }
+        
+        .metric-card:hover {
+            border-color: rgba(148, 163, 184, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+        }
+        
+        .metric-card.voltage::before { background: var(--accent-green); }
+        .metric-card.current::before { background: var(--accent-blue); }
+        .metric-card.power::before { background: var(--accent-orange); }
+        .metric-card.energy::before { background: var(--accent-purple); }
+        .metric-card.lux::before { background: var(--accent-yellow); }
+        .metric-card.temp::before { background: var(--accent-red); }
+        .metric-card.humi::before { background: var(--accent-cyan); }
+        
+        .metric-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .metric-title {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .metric-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+        
+        .voltage .metric-icon { background: rgba(34, 197, 94, 0.15); }
+        .current .metric-icon { background: rgba(59, 130, 246, 0.15); }
+        .power .metric-icon { background: rgba(249, 115, 22, 0.15); }
+        .energy .metric-icon { background: rgba(168, 85, 247, 0.15); }
+        .lux .metric-icon { background: rgba(250, 204, 21, 0.15); }
+        .temp .metric-icon { background: rgba(239, 68, 68, 0.15); }
+        .humi .metric-icon { background: rgba(6, 182, 212, 0.15); }
+        
+        .metric-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 2rem;
+            font-weight: 600;
+            line-height: 1;
+            margin-bottom: 4px;
+        }
+        
+        .voltage .metric-value { color: var(--accent-green); }
+        .current .metric-value { color: var(--accent-blue); }
+        .power .metric-value { color: var(--accent-orange); }
+        .energy .metric-value { color: var(--accent-purple); }
+        .lux .metric-value { color: var(--accent-yellow); }
+        .temp .metric-value { color: var(--accent-red); }
+        .humi .metric-value { color: var(--accent-cyan); }
+        
+        .metric-unit {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-left: 4px;
+        }
+        
+        .metric-trend {
+            font-size: 0.75rem;
+            margin-top: 8px;
+        }
+        
+        .trend-up { color: var(--accent-green); }
+        .trend-down { color: var(--accent-red); }
+        .trend-neutral { color: var(--text-muted); }
+        
+        /* ============ CHARTS GRID ============ */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+        
+        .chart-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+        }
+        
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .chart-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+        
+        .chart-container {
+            height: 180px;
+            position: relative;
+        }
+        
+        /* ============ BOTTOM SECTION ============ */
+        .bottom-section {
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 24px;
+        }
+        
+        /* ============ DATA TABLE ============ */
+        .table-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .table-title {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        
+        .table-title span {
+            color: var(--text-muted);
+            font-weight: 400;
+            font-size: 0.85rem;
+            margin-left: 8px;
+        }
+        
+        .table-wrapper {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .table-wrapper::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .table-wrapper::-webkit-scrollbar-track {
+            background: var(--bg-tertiary);
+        }
+        
+        .table-wrapper::-webkit-scrollbar-thumb {
+            background: var(--text-muted);
+            border-radius: 3px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        thead {
+            background: var(--bg-tertiary);
+            position: sticky;
+            top: 0;
+        }
+        
+        th {
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.85rem;
+        }
+        
+        tbody tr {
+            transition: background 0.2s;
+            animation: fadeIn 0.3s ease forwards;
+            opacity: 0;
+        }
+        
+        @keyframes fadeIn {
+            to { opacity: 1; }
+        }
+        
+        tbody tr:hover {
+            background: rgba(148, 163, 184, 0.05);
+        }
+        
+        .time-badge {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-tertiary);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+        
+        .value {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 500;
+        }
+        
+        .value.voltage { color: var(--accent-green); }
+        .value.current { color: var(--accent-blue); }
+        .value.power { color: var(--accent-orange); }
+        .value.energy { color: var(--accent-purple); }
+        .value.lux { color: var(--accent-yellow); }
+        .value.temp { color: var(--accent-red); }
+        .value.humi { color: var(--accent-cyan); }
+        
+        .no-data {
+            text-align: center;
+            padding: 40px !important;
+        }
+        
+        .empty-state {
+            color: var(--text-muted);
+        }
+        
+        .empty-state svg {
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+        
+        .empty-state p {
+            font-size: 1rem;
+            margin-bottom: 4px;
+        }
+        
+        .empty-state span {
+            font-size: 0.8rem;
+        }
+        
+        /* ============ STATS PANEL ============ */
+        .stats-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        .stats-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .stats-title {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        
+        .last-update {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        
+        .last-update span {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-green);
+        }
+        
+        .stats-content {
+            padding: 16px 20px;
+        }
+        
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+        
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+        
+        .stat-values {
+            display: flex;
+            gap: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+        }
+        
+        .stat-min { color: var(--accent-cyan); }
+        .stat-avg { color: var(--text-primary); font-weight: 600; }
+        .stat-max { color: var(--accent-orange); }
+        
+        /* ============ NOTIFICATIONS ============ */
+        .notifications {
+            position: fixed;
+            top: 80px;
+            right: 24px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .notification {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 0.85rem;
+            animation: slideIn 0.3s ease;
+            min-width: 250px;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        .notification.success { border-left: 3px solid var(--accent-green); }
+        .notification.error { border-left: 3px solid var(--accent-red); }
+        .notification.warning { border-left: 3px solid var(--accent-yellow); }
+        .notification.info { border-left: 3px solid var(--accent-blue); }
+        
+        .notification button {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 1.2rem;
+            line-height: 1;
+        }
+        
+        /* ============ RESPONSIVE ============ */
+        @media (max-width: 1200px) {
+            .charts-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .bottom-section {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                gap: 16px;
+                text-align: center;
+            }
+            
+            .header-right {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+            
+            .controls-bar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .control-group {
+                width: 100%;
+            }
+            
+            .control-group input {
+                flex: 1;
+            }
+            
+            .controls-spacer {
+                display: none;
+            }
+            
+            .metrics-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .main-content {
+                padding: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- HEADER -->
+    <header class="header">
+        <div class="logo">
+            <div class="logo-icon">☀️</div>
+            <div>
+                <h1>Solar Monitor</h1>
+                <p>Real-time Sensor Dashboard</p>
+            </div>
+        </div>
+        
+        <div class="header-right">
+            <div class="clock">
+                <div class="time" id="currentTime">--:--:--</div>
+                <div class="date" id="currentDate">Loading...</div>
+            </div>
+            
+            <div class="connection-status" id="connectionStatus">
+                <span class="status-dot"></span>
+                <span>Firebase</span>
+            </div>
+        </div>
+    </header>
+    
+    <!-- CONTROLS BAR -->
+    <div class="controls-bar">
+        <div class="control-group">
+            <label>Date:</label>
+            <input type="date" id="dateInput">
+        </div>
+        
+        <div class="control-group">
+            <label>Hour:</label>
+            <input type="number" id="hourInput" min="0" max="23" placeholder="0-23">
+        </div>
+        
+        <button class="btn btn-primary" id="loadBtn">
+            <svg id="loadIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12a9 9 0 11-6.219-8.56"/>
+            </svg>
+            <span>Load Data</span>
+        </button>
+        
+        <button class="btn btn-secondary btn-icon" id="autoRefreshToggle" title="Auto Refresh (10s)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+        </button>
+        
+        <div class="controls-spacer"></div>
+        
+        <button class="btn btn-secondary" id="exportBtn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+            </svg>
+            Export CSV
+        </button>
+    </div>
+    
+    <!-- NOTIFICATIONS -->
+    <div class="notifications" id="notifications"></div>
+    
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+        <!-- METRIC CARDS -->
+        <section class="metrics-grid">
+            <div class="metric-card voltage">
+                <div class="metric-header">
+                    <span class="metric-title">Voltage</span>
+                    <div class="metric-icon">⚡</div>
+                </div>
+                <div class="metric-value">
+                    <span id="voltage-value">0.00</span>
+                    <span class="metric-unit" id="voltage-unit">V</span>
+                </div>
+                <div class="metric-trend" id="voltage-trend">
+                    <span class="trend-neutral">— 0%</span>
+                </div>
+            </div>
+            
+            <div class="metric-card current">
+                <div class="metric-header">
+                    <span class="metric-title">Current</span>
+                    <div class="metric-icon">🔌</div>
+                </div>
+                <div class="metric-value">
+                    <span id="current-value">0.000</span>
+                    <span class="metric-unit" id="current-unit">A</span>
+                </div>
+                <div class="metric-trend" id="current-trend">
+                    <span class="trend-neutral">— 0%</span>
+                </div>
+            </div>
+            
+            <div class="metric-card power">
+                <div class="metric-header">
+                    <span class="metric-title">Power</span>
+                    <div class="metric-icon">💡</div>
+                </div>
+                <div class="metric-value">
+                    <span id="power-value">0.00</span>
+                    <span class="metric-unit" id="power-unit">mW</span>
+                </div>
+                <div class="metric-trend" id="power-trend">
+                    <span class="trend-neutral">— 0%</span>
+                </div>
+            </div>
+            
+            <div class="metric-card energy">
+                <div class="metric-header">
+                    <span class="metric-title">Energy</span>
+                    <div class="metric-icon">🔋</div>
+                </div>
+                <div class="metric-value">
+                    <span id="energy-value">0.00</span>
+                    <span class="metric-unit" id="energy-unit">Wh</span>
+                </div>
+                <div class="metric-trend" id="energy-trend">
+                    <span class="trend-neutral">— 0%</span>
+                </div>
+            </div>
+            
+            <div class="metric-card lux">
+                <div class="metric-header">
+                    <span class="metric-title">Illuminance</span>
+                    <div class="metric-icon">🌞</div>
+                </div>
+                <div class="metric-value">
+                    <span id="lux-value">0</span>
+                    <span class="metric-unit" id="lux-unit">Lux</span>
+                </div>
+                <div class="metric-trend" id="lux-trend">
+                    <span class="trend-neutral">— 0%</span>
+                </div>
+            </div>
+            
+            <div class="metric-card temp">
+                <div class="metric-header">
+                    <span class="metric-title">Temperature</span>
+                    <div class="metric-icon">🌡️</div>
+                </div>
+                <div class="metric-value">
+                    <span id="temp-value">0.0</span>
+                    <span class="metric-unit" id="temp-unit">°C</span>
+                </div>
+                <div class="metric-trend" id="temp-trend">
+                    <span class="trend-neutral">— 0%</span>
+                </div>
+            </div>
+            
+            <div class="metric-card humi">
+                <div class="metric-header">
+                    <span class="metric-title">Humidity</span>
+                    <div class="metric-icon">💧</div>
+                </div>
+                <div class="metric-value">
+                    <span id="humi-value">0.0</span>
+                    <span class="metric-unit" id="humi-unit">%</span>
+                </div>
+                <div class="metric-trend" id="humi-trend">
+                    <span class="trend-neutral">— 0%</span>
+                </div>
+            </div>
+        </section>
+        
+        <!-- CHARTS -->
+        <section class="charts-grid">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">⚡ Voltage</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chartU"></canvas>
+                </div>
+            </div>
+            
+            <div class="chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">🔌 Current</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chartCurrent"></canvas>
+                </div>
+            </div>
+            
+            <div class="chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">💡 Power</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chartPower"></canvas>
+                </div>
+            </div>
+            
+            <div class="chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">🌞 Illuminance</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chartLux"></canvas>
+                </div>
+            </div>
+            
+            <div class="chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">🌡️ Temperature</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chartTemp"></canvas>
+                </div>
+            </div>
+            
+            <div class="chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">💧 Humidity</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chartHumi"></canvas>
+                </div>
+            </div>
+        </section>
+        
+        <!-- BOTTOM SECTION -->
+        <section class="bottom-section">
+            <!-- DATA TABLE -->
+            <div class="table-card">
+                <div class="table-header">
+                    <div class="table-title">
+                        📊 Data Records
+                        <span>(<span id="recordCount">0</span> records)</span>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Voltage</th>
+                                <th>Current</th>
+                                <th>Power</th>
+                                <th>Energy</th>
+                                <th>Lux</th>
+                                <th>Temp</th>
+                                <th>Humi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <tr>
+                                <td colspan="8" class="no-data">
+                                    <div class="empty-state">
+                                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                            <path d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                        <p>No data loaded</p>
+                                        <span>Select date and hour, then click Load Data</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- STATS PANEL -->
+            <div class="stats-panel">
+                <div class="stats-header">
+                    <span class="stats-title">📈 Statistics</span>
+                    <div class="last-update">
+                        Last: <span id="lastUpdate">--:--:--</span>
+                    </div>
+                </div>
+                <div class="stats-content" id="statsContent">
+                    <div class="stat-row">
+                        <span class="stat-label">Voltage</span>
+                        <span class="stat-values">
+                            <span class="stat-min">--</span>
+                            <span class="stat-avg">--</span>
+                            <span class="stat-max">--</span>
+                        </span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Current</span>
+                        <span class="stat-values">
+                            <span class="stat-min">--</span>
+                            <span class="stat-avg">--</span>
+                            <span class="stat-max">--</span>
+                        </span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Power</span>
+                        <span class="stat-values">
+                            <span class="stat-min">--</span>
+                            <span class="stat-avg">--</span>
+                            <span class="stat-max">--</span>
+                        </span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Temperature</span>
+                        <span class="stat-values">
+                            <span class="stat-min">--</span>
+                            <span class="stat-avg">--</span>
+                            <span class="stat-max">--</span>
+                        </span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Humidity</span>
+                        <span class="stat-values">
+                            <span class="stat-min">--</span>
+                            <span class="stat-avg">--</span>
+                            <span class="stat-max">--</span>
+                        </span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Illuminance</span>
+                        <span class="stat-values">
+                            <span class="stat-min">--</span>
+                            <span class="stat-avg">--</span>
+                            <span class="stat-max">--</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

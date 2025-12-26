@@ -1,0 +1,6 @@
+streamlit==1.40.0
+firebase-admin==6.4.0
+plotly==5.24.0
+pandas==2.2.0
+python-dateutil==2.8.2
+
