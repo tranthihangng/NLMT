@@ -249,40 +249,97 @@ def init_firebase():
     """Khởi tạo kết nối Firebase - Hỗ trợ Streamlit Secrets và file local"""
     try:
         if not firebase_admin._apps:
-            # Ưu tiên dùng Streamlit secrets (cho production/cloud)
-            # Fallback về file local (cho development)
-            if 'firebase' in st.secrets:
+            # Kiểm tra Streamlit secrets TRƯỚC (cho production/cloud)
+            has_secrets = False
+            try:
+                has_secrets = 'firebase' in st.secrets and st.secrets['firebase'] is not None
+            except:
+                # Nếu st.secrets không tồn tại hoặc lỗi, bỏ qua
+                pass
+            
+            if has_secrets:
                 # Lấy credentials từ Streamlit secrets
-                firebase_config = st.secrets['firebase']
-                cred = credentials.Certificate({
-                    "type": "service_account",
-                    "project_id": firebase_config.get("project_id", ""),
-                    "private_key_id": firebase_config.get("private_key_id", ""),
-                    "private_key": firebase_config.get("private_key", "").replace('\\n', '\n'),
-                    "client_email": firebase_config.get("client_email", ""),
-                    "client_id": firebase_config.get("client_id", ""),
-                    "auth_uri": firebase_config.get("auth_uri", "https://accounts.google.com/o/oauth2/auth"),
-                    "token_uri": firebase_config.get("token_uri", "https://oauth2.googleapis.com/token"),
-                    "auth_provider_x509_cert_url": firebase_config.get("auth_provider_x509_cert_url", ""),
-                    "client_x509_cert_url": firebase_config.get("client_x509_cert_url", "")
-                })
-                database_url = firebase_config.get('databaseURL', 'https://nlmt-duy-default-rtdb.firebaseio.com')
+                try:
+                    firebase_config = st.secrets['firebase']
+                    cred = credentials.Certificate({
+                        "type": "service_account",
+                        "project_id": firebase_config.get("project_id", ""),
+                        "private_key_id": firebase_config.get("private_key_id", ""),
+                        "private_key": firebase_config.get("private_key", "").replace('\\n', '\n'),
+                        "client_email": firebase_config.get("client_email", ""),
+                        "client_id": firebase_config.get("client_id", ""),
+                        "auth_uri": firebase_config.get("auth_uri", "https://accounts.google.com/o/oauth2/auth"),
+                        "token_uri": firebase_config.get("token_uri", "https://oauth2.googleapis.com/token"),
+                        "auth_provider_x509_cert_url": firebase_config.get("auth_provider_x509_cert_url", ""),
+                        "client_x509_cert_url": firebase_config.get("client_x509_cert_url", "")
+                    })
+                    database_url = firebase_config.get('databaseURL', 'https://nlmt-duy-default-rtdb.firebaseio.com')
+                except Exception as secrets_error:
+                    # Nếu lỗi khi đọc secrets, fallback về file
+                    if os.path.exists("firebase-key.json"):
+                        cred = credentials.Certificate("firebase-key.json")
+                        database_url = 'https://nlmt-duy-default-rtdb.firebaseio.com'
+                    else:
+                        raise FileNotFoundError(
+                            f"Lỗi đọc Streamlit secrets: {secrets_error}. "
+                            "Vui lòng cấu hình lại trong Settings → Secrets hoặc đặt file firebase-key.json"
+                        )
             elif os.path.exists("firebase-key.json"):
                 # Fallback: dùng file local nếu có (cho development)
                 cred = credentials.Certificate("firebase-key.json")
                 database_url = 'https://nlmt-duy-default-rtdb.firebaseio.com'
             else:
                 raise FileNotFoundError(
-                    "Không tìm thấy Firebase credentials. "
-                    "Vui lòng cấu hình trong Streamlit secrets hoặc đặt file firebase-key.json"
+                    "Không tìm thấy Firebase credentials.\n\n"
+                    "**Nếu chạy trên Streamlit Cloud:**\n"
+                    "1. Vào Settings → Secrets\n"
+                    "2. Thêm cấu hình Firebase (xem HUONG_DAN_STREAMLIT_SECRETS.md)\n\n"
+                    "**Nếu chạy local:**\n"
+                    "1. Đảm bảo file firebase-key.json có trong thư mục dự án"
                 )
             
             firebase_admin.initialize_app(cred, {
                 'databaseURL': database_url
             })
         return True
+    except FileNotFoundError as e:
+        # Hiển thị thông báo rõ ràng cho FileNotFoundError
+        error_msg = str(e)
+        if "firebase-key.json" in error_msg:
+            st.error(f"❌ **Lỗi cấu hình Firebase**: {error_msg}")
+            st.info("""
+            **Hướng dẫn khắc phục:**
+            
+            1. **Nếu chạy trên Streamlit Cloud:**
+               - Vào **Settings** → **Secrets**
+               - Thêm cấu hình Firebase (xem `HUONG_DAN_STREAMLIT_SECRETS.md`)
+            
+            2. **Nếu chạy local:**
+               - Đảm bảo file `firebase-key.json` có trong thư mục dự án
+            
+            3. **Xem chi tiết:** Mở file `HUONG_DAN_STREAMLIT_SECRETS.md`
+            """)
+        else:
+            st.error(f"❌ **Lỗi**: {error_msg}")
+        return False
     except Exception as e:
-        st.error(f"Lỗi kết nối Firebase: {e}")
+        error_msg = str(e)
+        if "firebase-key.json" in error_msg:
+            st.error(f"❌ **Lỗi cấu hình Firebase**: {error_msg}")
+            st.info("""
+            **Hướng dẫn khắc phục:**
+            
+            1. **Nếu chạy trên Streamlit Cloud:**
+               - Vào **Settings** → **Secrets**
+               - Thêm cấu hình Firebase (xem `HUONG_DAN_STREAMLIT_SECRETS.md`)
+            
+            2. **Nếu chạy local:**
+               - Đảm bảo file `firebase-key.json` có trong thư mục dự án
+            
+            3. **Xem chi tiết:** Mở file `HUONG_DAN_STREAMLIT_SECRETS.md`
+            """)
+        else:
+            st.error(f"❌ **Lỗi kết nối Firebase**: {error_msg}")
         return False
 
 
