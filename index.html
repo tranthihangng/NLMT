@@ -422,6 +422,13 @@
             }
         }
         
+        // Tự động bật auto-refresh khi trang load (nếu chưa bật)
+        function enableAutoRefreshOnLoad() {
+            if (!autoRefreshInterval) {
+                toggleAutoRefresh();
+            }
+        }
+        
         // ================== EXPORT DATA ==================
         function exportData() {
             if (lastData.length === 0) {
@@ -446,6 +453,77 @@
             showNotification('Data exported successfully', 'success');
         }
         
+        // ================== REAL-TIME LISTENER ==================
+        let realtimeListener = null;
+        
+        function startRealtimeListener() {
+            // Dừng listener cũ nếu có
+            if (realtimeListener) {
+                realtimeListener();
+                realtimeListener = null;
+            }
+            
+            const dateInput = document.getElementById('dateInput').value;
+            const hourInput = document.getElementById('hourInput').value;
+            
+            if (!dateInput || hourInput === '') {
+                return;
+            }
+            
+            const hour = String(hourInput).padStart(2, '0');
+            const path = `/sensor_data/${dateInput}/${hour}`;
+            const dataRef = ref(database, path);
+            
+            // Lắng nghe thay đổi real-time
+            realtimeListener = onValue(dataRef, (snapshot) => {
+                if (snapshot.exists()) {
+                    const rawData = snapshot.val();
+                    const dataArray = [];
+                    
+                    for (const timeKey in rawData) {
+                        const record = rawData[timeKey];
+                        dataArray.push({
+                            time: timeKey,
+                            U: record.U || 0,
+                            Current: record.Current || 0,
+                            milliWatt: record.milliWatt || 0,
+                            energy: record.energy || 0,
+                            Lux: record.Lux || 0,
+                            Temp: record.Temp || 0,
+                            Humi: record.Humi || 0
+                        });
+                    }
+                    
+                    // Sort theo thời gian
+                    dataArray.sort((a, b) => {
+                        const [ah, am, as] = a.time.split(':').map(Number);
+                        const [bh, bm, bs] = b.time.split(':').map(Number);
+                        return (ah * 3600 + am * 60 + as) - (bh * 3600 + bm * 60 + bs);
+                    });
+                    
+                    lastData = dataArray;
+                    
+                    // Cập nhật UI mà không hiển thị notification
+                    updateMetricCards(dataArray);
+                    displayTable(dataArray);
+                    updateCharts(dataArray);
+                    updateStats(dataArray);
+                } else {
+                    displayTable([]);
+                    lastData = [];
+                }
+            }, (error) => {
+                console.error('Realtime listener error:', error);
+            });
+        }
+        
+        function stopRealtimeListener() {
+            if (realtimeListener) {
+                realtimeListener();
+                realtimeListener = null;
+            }
+        }
+        
         // ================== KHỞI TẠO ==================
         window.addEventListener('DOMContentLoaded', () => {
             initCharts();
@@ -456,9 +534,25 @@
             document.getElementById('hourInput').value = now.getHours();
             
             // Event listeners
-            document.getElementById('loadBtn').addEventListener('click', loadData);
+            document.getElementById('loadBtn').addEventListener('click', () => {
+                loadData();
+                // Bật real-time listener sau khi load
+                setTimeout(startRealtimeListener, 500);
+            });
+            
             document.getElementById('autoRefreshToggle').addEventListener('click', toggleAutoRefresh);
             document.getElementById('exportBtn').addEventListener('click', exportData);
+            
+            // Khi thay đổi date hoặc hour, cập nhật real-time listener
+            document.getElementById('dateInput').addEventListener('change', () => {
+                stopRealtimeListener();
+                startRealtimeListener();
+            });
+            
+            document.getElementById('hourInput').addEventListener('change', () => {
+                stopRealtimeListener();
+                startRealtimeListener();
+            });
             
             // Update clock
             function updateClock() {
@@ -473,6 +567,17 @@
             
             // Connection status
             document.getElementById('connectionStatus').classList.add('connected');
+            
+            // TỰ ĐỘNG LOAD DỮ LIỆU KHI MỞ TRANG
+            setTimeout(() => {
+                loadData();
+                // Tự động bật auto-refresh
+                if (!autoRefreshInterval) {
+                    toggleAutoRefresh();
+                }
+                // Bật real-time listener
+                setTimeout(startRealtimeListener, 1000);
+            }, 500);
         });
         
         window.loadData = loadData;

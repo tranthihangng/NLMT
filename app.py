@@ -1,667 +1,490 @@
 """
-Solar Monitoring Dashboard - Streamlit Version
-Dashboard theo dõi dữ liệu cảm biến năng lượng mặt trời từ Firebase
+Solar Monitoring Dashboard - Main Application
+Ứng dụng chính với 2 chế độ:
+1. Dashboard HTML (Real-time đơn giản)
+2. Dashboard Streamlit (Phân tích nâng cao)
+
+Author: Solar Monitoring System
 """
 
 import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, db
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import json
-import time
 
 # ================== CẤU HÌNH TRANG ==================
 st.set_page_config(
-    page_title="Solar Monitoring Dashboard",
+    page_title="Solar Panel Monitoring System",
     page_icon="☀️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ================== CSS TÙY CHỈNH ==================
-st.markdown("""
+# ================== CSS ==================
+def apply_theme_css(theme='dark'):
+    """Áp dụng CSS theo theme - Phiên bản chuyên nghiệp"""
+    
+    # Định nghĩa màu sắc theo theme
+    if theme == 'light':
+        # Theme sáng - Clean & Professional
+        bg_gradient = "linear-gradient(135deg, #f0f4f8 0%, #ffffff 50%, #f0f4f8 100%)"
+        sidebar_bg = "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)"
+        card_bg = "linear-gradient(145deg, #ffffff 0%, #f8fafc 100%)"
+        card_shadow = "0 8px 25px -5px rgba(0, 0, 0, 0.08)"
+        card_hover_shadow = "0 15px 35px -5px rgba(0, 0, 0, 0.12)"
+        text_primary = "#1a202c"
+        text_secondary = "#4a5568"
+        text_muted = "#718096"
+        border_color = "rgba(0, 0, 0, 0.08)"
+        accent_gradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+        info_bg = "rgba(66, 153, 225, 0.1)"
+    else:
+        # Theme tối - Premium Dark
+        bg_gradient = "linear-gradient(135deg, #0a0f1a 0%, #1a1f2e 50%, #0a0f1a 100%)"
+        sidebar_bg = "linear-gradient(180deg, #1a1f2e 0%, #0a0f1a 100%)"
+        card_bg = "linear-gradient(145deg, #1e2538 0%, #2d3548 100%)"
+        card_shadow = "0 8px 25px -5px rgba(0, 0, 0, 0.4)"
+        card_hover_shadow = "0 15px 35px -5px rgba(0, 0, 0, 0.5)"
+        text_primary = "#f7fafc"
+        text_secondary = "#a0aec0"
+        text_muted = "#718096"
+        border_color = "rgba(255, 255, 255, 0.06)"
+        accent_gradient = "linear-gradient(135deg, #f59e0b 0%, #f97316 100%)"
+        info_bg = "rgba(66, 153, 225, 0.15)"
+    
+    st.markdown(f"""
 <style>
-    /* Import fonts */
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     
-    /* Main background */
-    .stApp {
-        background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
-    }
+    .stApp {{
+        background: {bg_gradient};
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }}
     
-    /* Sidebar */
-    [data-testid="stSidebar"] {
-        background: #1e293b;
-        border-right: 1px solid rgba(148, 163, 184, 0.1);
-    }
+    [data-testid="stSidebar"] {{
+        background: {sidebar_bg};
+        border-right: 1px solid {border_color};
+    }}
     
-    [data-testid="stSidebar"] .stMarkdown {
-        color: #f1f5f9;
-    }
-    
-    /* Headers */
-    h1, h2, h3 {
-        font-family: 'Plus Jakarta Sans', sans-serif !important;
-        color: #f1f5f9 !important;
-    }
-    
-    /* Metric cards */
-    [data-testid="stMetric"] {
-        background: #1e293b;
-        border: 1px solid rgba(148, 163, 184, 0.1);
-        border-radius: 12px;
-        padding: 16px;
-    }
-    
-    [data-testid="stMetricLabel"] {
-        color: #94a3b8 !important;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-    
-    [data-testid="stMetricValue"] {
-        font-family: 'JetBrains Mono', monospace !important;
-        color: #f1f5f9 !important;
-        font-size: 1.8rem !important;
-    }
-    
-    [data-testid="stMetricDelta"] {
-        font-family: 'JetBrains Mono', monospace !important;
-    }
-    
-    /* DataFrames */
-    .stDataFrame {
-        background: #1e293b;
-        border-radius: 12px;
-    }
-    
-    /* Buttons */
-    .stButton > button {
-        background: linear-gradient(135deg, #3b82f6, #a855f7);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        font-weight: 600;
-        padding: 0.5rem 1rem;
-        transition: all 0.2s;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-    }
-    
-    /* Date input */
-    .stDateInput > div > div {
-        background: #334155;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        border-radius: 8px;
-    }
-    
-    /* Number input */
-    .stNumberInput > div > div > input {
-        background: #334155;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        border-radius: 8px;
-        color: #f1f5f9;
-    }
-    
-    /* Tabs */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background: #1e293b;
-        border-radius: 8px;
-        padding: 4px;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        background: transparent;
-        border-radius: 6px;
-        color: #94a3b8;
-        font-weight: 500;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background: #334155;
-        color: #f1f5f9;
-    }
-    
-    /* Custom metric card styling */
-    .metric-card {
-        background: #1e293b;
-        border: 1px solid rgba(148, 163, 184, 0.1);
-        border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 16px;
-    }
-    
-    .metric-title {
-        color: #94a3b8;
-        font-size: 0.85rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 8px;
-    }
-    
-    .metric-value {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 2rem;
-        font-weight: 600;
-        margin-bottom: 4px;
-    }
-    
-    .metric-unit {
-        color: #64748b;
-        font-size: 1rem;
-    }
-    
-    /* Colors for different metrics */
-    .voltage { color: #22c55e; border-top: 3px solid #22c55e; }
-    .current { color: #3b82f6; border-top: 3px solid #3b82f6; }
-    .power { color: #f97316; border-top: 3px solid #f97316; }
-    .energy { color: #a855f7; border-top: 3px solid #a855f7; }
-    .lux { color: #facc15; border-top: 3px solid #facc15; }
-    .temp { color: #ef4444; border-top: 3px solid #ef4444; }
-    .humi { color: #06b6d4; border-top: 3px solid #06b6d4; }
-    
-    /* Hide Streamlit branding */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    
-    /* Stats box */
-    .stats-box {
-        background: #1e293b;
-        border: 1px solid rgba(148, 163, 184, 0.1);
-        border-radius: 12px;
-        padding: 16px;
-    }
-    
-    .stat-row {
-        display: flex;
-        justify-content: space-between;
-        padding: 8px 0;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-    }
-    
-    .stat-label { color: #94a3b8; }
-    .stat-min { color: #06b6d4; }
-    .stat-avg { color: #f1f5f9; font-weight: 600; }
-    .stat-max { color: #f97316; }
-    
-    /* Title styling */
-    .main-title {
-        background: linear-gradient(135deg, #facc15, #f97316);
+    .welcome-header {{
+        background: {accent_gradient};
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        font-size: 2rem;
-        font-weight: 700;
+        font-size: 2.5rem;
+        font-weight: 800;
+        text-align: center;
         margin-bottom: 0;
-    }
+        letter-spacing: -0.5px;
+    }}
     
-    .subtitle {
-        color: #64748b;
-        font-size: 0.9rem;
-    }
+    .welcome-sub {{
+        color: {text_muted};
+        text-align: center;
+        font-size: 1rem;
+        margin-bottom: 2rem;
+    }}
     
-    /* Connection status */
-    .status-connected {
-        background: rgba(34, 197, 94, 0.1);
-        color: #22c55e;
-        padding: 4px 12px;
-        border-radius: 20px;
+    .mode-card {{
+        background: {card_bg};
+        border: 1px solid {border_color};
+        border-radius: 16px;
+        padding: 1.5rem;
+        text-align: center;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        height: 100%;
+    }}
+    
+    .mode-card:hover {{
+        transform: translateY(-4px);
+        box-shadow: {card_hover_shadow};
+        border-color: rgba(102, 126, 234, 0.5);
+    }}
+    
+    .mode-icon {{
+        font-size: 3rem;
+        margin-bottom: 0.75rem;
+    }}
+    
+    .mode-title {{
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: {text_primary};
+        margin-bottom: 0.5rem;
+    }}
+    
+    .mode-desc {{
+        color: {text_secondary};
+        font-size: 0.85rem;
+        line-height: 1.5;
+    }}
+    
+    .feature-list {{
+        text-align: left;
+        margin-top: 0.75rem;
+        padding-left: 0.75rem;
+    }}
+    
+    .feature-list li {{
+        color: {text_secondary};
+        margin: 0.35rem 0;
         font-size: 0.8rem;
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-    }
+    }}
     
-    .status-dot {
-        width: 8px;
-        height: 8px;
-        background: #22c55e;
-        border-radius: 50%;
-        animation: pulse 2s infinite;
-    }
+    .feature-list li::marker {{
+        color: #22c55e;
+    }}
     
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.5; }
-    }
+    /* Theme toggle styling */
+    .theme-btn {{
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.2s;
+    }}
+    
+    /* Info boxes */
+    [data-testid="stAlert"] {{
+        background: {info_bg};
+        border: 1px solid {border_color};
+        border-radius: 12px;
+    }}
+    
+    #MainMenu {{visibility: hidden;}}
+    footer {{visibility: hidden;}}
+    .stDeployButton {{display: none;}}
 </style>
 """, unsafe_allow_html=True)
 
+# Áp dụng theme CSS
+if 'theme' not in st.session_state:
+    st.session_state.theme = 'dark'
+apply_theme_css(st.session_state.theme)
 
-# ================== KHỞI TẠO FIREBASE ==================
-@st.cache_resource
-def init_firebase():
-    """Khởi tạo kết nối Firebase"""
+
+def main():
+    # Khởi tạo theme (mặc định dark)
+    if 'theme' not in st.session_state:
+        st.session_state.theme = 'dark'
+    
+    # Welcome header
+    st.markdown('<h1 class="welcome-header">☀️ Solar Panel Monitoring System</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="welcome-sub">Hệ thống giám sát và phân tích hiệu suất pin mặt trời</p>', unsafe_allow_html=True)
+    
+    # Sidebar
+    with st.sidebar:
+        st.image("https://img.icons8.com/fluency/96/solar-panel.png", width=80)
+        st.title("Chọn chế độ")
+        
+        # Theme toggle - Thêm vào đây
+        st.markdown("---")
+        st.markdown("### 🎨 Chuyển đổi giao diện")
+        
+        current_theme = st.session_state.theme
+        if current_theme == 'dark':
+            st.info("🌙 **Đang dùng:** Giao diện tối")
+        else:
+            st.info("☀️ **Đang dùng:** Giao diện sáng")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🌙 Tối", 
+                        use_container_width=True, 
+                        disabled=current_theme == 'dark',
+                        type="secondary",
+                        key="main_theme_dark"):
+                st.session_state.theme = 'dark'
+                st.rerun()
+        with col2:
+            if st.button("☀️ Sáng", 
+                        use_container_width=True,
+                        disabled=current_theme == 'light',
+                        type="primary",
+                        key="main_theme_light"):
+                st.session_state.theme = 'light'
+                st.rerun()
+        
+        st.markdown("---")
+        
+        mode = st.radio(
+            "",
+            ["🏠 Trang chủ", "📊 Dashboard Real-time", "🔬 Phân tích nâng cao"],
+            index=0,
+            label_visibility="collapsed"
+        )
+        
+        st.divider()
+        
+        st.markdown("""
+        ### 📌 Hướng dẫn
+        
+        **Dashboard Real-time:**
+        - Hiển thị dữ liệu trực tiếp
+        - Cập nhật tự động
+        - Giao diện nhẹ, nhanh
+        
+        **Phân tích nâng cao:**
+        - Phân tích hiệu suất
+        - Phát hiện bất thường
+        - Báo cáo chi tiết
+        - So sánh lịch sử
+        """)
+        
+        st.divider()
+        
+        st.markdown("""
+        ### 🔗 Liên kết
+        - [Firebase Console](https://console.firebase.google.com/)
+        - [Tài liệu hướng dẫn](./HUONG_DAN_CHAY.md)
+        """)
+    
+    # Main content based on mode
+    if mode == "🏠 Trang chủ":
+        show_home()
+    elif mode == "📊 Dashboard Real-time":
+        show_realtime_dashboard()
+    else:
+        show_advanced_analysis()
+
+
+def show_home():
+    """Trang chủ với lựa chọn chế độ"""
+    st.markdown("---")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        <div class="mode-card">
+            <div class="mode-icon">📊</div>
+            <div class="mode-title">Dashboard Real-time</div>
+            <div class="mode-desc">
+                Giám sát dữ liệu cảm biến theo thời gian thực với giao diện nhẹ, tốc độ cao.
+            </div>
+            <ul class="feature-list">
+                <li>Cập nhật tự động mỗi 10 giây</li>
+                <li>Biểu đồ trực quan</li>
+                <li>Xuất dữ liệu CSV</li>
+                <li>Thống kê cơ bản</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.button("🚀 Mở Dashboard Real-time", use_container_width=True, key="btn_realtime"):
+            st.session_state['mode'] = 'realtime'
+            st.rerun()
+    
+    with col2:
+        st.markdown("""
+        <div class="mode-card">
+            <div class="mode-icon">🔬</div>
+            <div class="mode-title">Phân tích nâng cao</div>
+            <div class="mode-desc">
+                Phân tích hiệu suất chi tiết, phát hiện bất thường và dự báo suy giảm.
+            </div>
+            <ul class="feature-list">
+                <li>Tính hiệu suất thực tế</li>
+                <li>Phát hiện bất thường tự động</li>
+                <li>Điểm sức khỏe tấm pin</li>
+                <li>So sánh lịch sử</li>
+                <li>Khuyến nghị bảo trì</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.button("🔬 Mở Phân tích nâng cao", use_container_width=True, key="btn_analysis"):
+            st.session_state['mode'] = 'analysis'
+            st.rerun()
+    
+    # Thông tin hệ thống
+    st.markdown("---")
+    st.subheader("📋 Thông tin hệ thống")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.info("""
+        **🔌 Phần cứng**
+        - Node cảm biến LoRa
+        - Cảm biến INA219 (V, I, P)
+        - Cảm biến BH1750 (Lux)
+        - Cảm biến DHT22 (T, H)
+        """)
+    
+    with col2:
+        st.info("""
+        **☁️ Backend**
+        - Firebase Realtime Database
+        - Cập nhật real-time
+        - Lưu trữ lịch sử
+        """)
+    
+    with col3:
+        st.info("""
+        **📊 Phân tích**
+        - Hiệu suất PV
+        - Performance Ratio
+        - Phát hiện bất thường
+        - Xu hướng suy giảm
+        """)
+    
+    # Công thức tính toán
+    st.markdown("---")
+    st.subheader("📐 Công thức tính toán")
+    
+    with st.expander("Xem các công thức phân tích", expanded=False):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            **Hiệu suất chuyển đổi (η):**
+            
+            $$η = \\frac{P_{output}}{G \\times A} \\times 100\\%$$
+            
+            Trong đó:
+            - $P_{output}$: Công suất đầu ra (W)
+            - $G$: Bức xạ mặt trời (W/m²)
+            - $A$: Diện tích tấm pin (m²)
+            """)
+        
+        with col2:
+            st.markdown("""
+            **Công suất kỳ vọng:**
+            
+            $$P_{expected} = P_{rated} \\times \\frac{G}{G_{STC}} \\times [1 + α(T - T_{STC})]$$
+            
+            Trong đó:
+            - $P_{rated}$: Công suất định mức (W)
+            - $G_{STC}$: Bức xạ chuẩn (1000 W/m²)
+            - $α$: Hệ số nhiệt độ (%/°C)
+            - $T_{STC}$: Nhiệt độ chuẩn (25°C)
+            """)
+        
+        st.markdown("""
+        **Performance Ratio (PR):**
+        
+        $$PR = \\frac{P_{actual}}{P_{expected}} \\times 100\\%$$
+        
+        **Đánh giá PR:**
+        - PR > 80%: Tốt
+        - 70% < PR < 80%: Chấp nhận được
+        - PR < 70%: Cần kiểm tra
+        - PR < 50%: Bất thường nghiêm trọng
+        """)
+
+
+def show_realtime_dashboard():
+    """Hiển thị dashboard real-time (HTML embed)"""
+    import streamlit.components.v1 as components
+    
+    # Ẩn các elements không cần thiết
+    st.markdown("""
+    <style>
+        .block-container {
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+            max-width: 100% !important;
+        }
+        .main .block-container {
+            padding: 0 !important;
+            max-width: 100% !important;
+        }
+        iframe {
+            border: none !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
     try:
-        # Kiểm tra nếu đã khởi tạo
+        with open("index.html", "r", encoding="utf-8") as f:
+            html_content = f.read()
+        
+        components.html(html_content, height=2000, scrolling=True)
+    except FileNotFoundError:
+        st.error("Không tìm thấy file index.html. Vui lòng kiểm tra lại.")
+
+
+def show_advanced_analysis():
+    """Hiển thị phân tích nâng cao"""
+    # Import và chạy dashboard nâng cao
+    try:
+        import dashboard
+        dashboard.main()
+    except ImportError as e:
+        st.error(f"Lỗi import dashboard: {e}")
+        st.info("Đang chuyển sang chế độ inline...")
+        
+        # Fallback: chạy inline nếu import lỗi
+        run_inline_analysis()
+
+
+def run_inline_analysis():
+    """Chạy phân tích nội tuyến nếu import dashboard thất bại"""
+    import pandas as pd
+    import firebase_admin
+    from firebase_admin import credentials, db
+    from datetime import datetime
+    
+    st.subheader("🔬 Phân tích nâng cao (Chế độ nội tuyến)")
+    
+    # Khởi tạo Firebase
+    try:
         if not firebase_admin._apps:
-            # CÁCH 1: Sử dụng file service account JSON
-            # Uncomment và thay đổi đường dẫn file JSON của bạn
-            # cred = credentials.Certificate("path/to/your-service-account.json")
-            
-            # CÁCH 2: Sử dụng dictionary trực tiếp (KHÔNG KHUYẾN NGHỊ cho production)
-            # Thay thế các giá trị bên dưới bằng thông tin của bạn
-            service_account_info = {
-                "type": "service_account",
-                "project_id": "nlmt-duy",
-                "private_key_id": "YOUR_PRIVATE_KEY_ID",
-                "private_key": "YOUR_PRIVATE_KEY",
-                "client_email": "YOUR_CLIENT_EMAIL",
-                "client_id": "YOUR_CLIENT_ID",
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                "client_x509_cert_url": "YOUR_CERT_URL"
-            }
-            
-            cred = credentials.Certificate(service_account_info)
+            cred = credentials.Certificate("firebase-key.json")
             firebase_admin.initialize_app(cred, {
                 'databaseURL': 'https://nlmt-duy-default-rtdb.firebaseio.com'
             })
-        
-        return True
     except Exception as e:
         st.error(f"Lỗi kết nối Firebase: {e}")
-        return False
-
-
-def load_data_from_firebase(date_str: str, hour: int) -> pd.DataFrame:
-    """Load dữ liệu từ Firebase Realtime Database"""
-    try:
-        hour_str = str(hour).zfill(2)
-        path = f"/sensor_data/{date_str}/{hour_str}"
-        
-        ref = db.reference(path)
-        data = ref.get()
-        
-        if not data:
-            return pd.DataFrame()
-        
-        # Chuyển đổi thành DataFrame
-        records = []
-        for time_key, values in data.items():
-            record = {
-                'Time': time_key,
-                'Voltage': values.get('U', 0),
-                'Current': values.get('Current', 0),
-                'Power': values.get('milliWatt', 0),
-                'Energy': values.get('energy', 0),
-                'Lux': values.get('Lux', 0),
-                'Temp': values.get('Temp', 0),
-                'Humidity': values.get('Humi', 0)
-            }
-            records.append(record)
-        
-        df = pd.DataFrame(records)
-        
-        # Sort theo thời gian
-        df['Time_sort'] = pd.to_datetime(df['Time'], format='%H:%M:%S')
-        df = df.sort_values('Time_sort').reset_index(drop=True)
-        df = df.drop('Time_sort', axis=1)
-        
-        return df
-        
-    except Exception as e:
-        st.error(f"Lỗi đọc dữ liệu: {e}")
-        return pd.DataFrame()
-
-
-def calculate_stats(df: pd.DataFrame, column: str) -> dict:
-    """Tính thống kê cho một cột"""
-    if df.empty or column not in df.columns:
-        return {'min': 0, 'max': 0, 'avg': 0}
+        return
     
-    values = df[column].dropna()
-    if values.empty:
-        return {'min': 0, 'max': 0, 'avg': 0}
-    
-    return {
-        'min': values.min(),
-        'max': values.max(),
-        'avg': values.mean()
-    }
-
-
-def create_chart(df: pd.DataFrame, y_column: str, title: str, color: str, y_label: str):
-    """Tạo biểu đồ Plotly"""
-    if df.empty:
-        fig = go.Figure()
-        fig.add_annotation(
-            text="No data available",
-            xref="paper", yref="paper",
-            x=0.5, y=0.5, showarrow=False,
-            font=dict(size=14, color="#64748b")
-        )
-    else:
-        fig = px.area(
-            df, x='Time', y=y_column,
-            title=title,
-            color_discrete_sequence=[color]
-        )
-        
-        fig.update_traces(
-            fill='tozeroy',
-            fillcolor=color.replace(')', ', 0.1)').replace('rgb', 'rgba'),
-            line=dict(width=2)
-        )
-    
-    fig.update_layout(
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(family="JetBrains Mono, monospace", color="#94a3b8"),
-        title=dict(font=dict(size=14, color="#f1f5f9")),
-        xaxis=dict(
-            gridcolor='rgba(148, 163, 184, 0.1)',
-            title="",
-            tickfont=dict(size=10)
-        ),
-        yaxis=dict(
-            gridcolor='rgba(148, 163, 184, 0.1)',
-            title=y_label,
-            titlefont=dict(size=11),
-            tickfont=dict(size=10)
-        ),
-        margin=dict(l=40, r=20, t=40, b=30),
-        height=250,
-        showlegend=False,
-        hovermode='x unified'
-    )
-    
-    return fig
-
-
-def render_metric_card(title: str, value: float, unit: str, delta: float = None, 
-                       color_class: str = "", decimals: int = 2):
-    """Render một metric card HTML"""
-    delta_html = ""
-    if delta is not None:
-        if delta > 0:
-            delta_html = f'<span style="color: #22c55e; font-size: 0.8rem;">↑ +{delta:.1f}%</span>'
-        elif delta < 0:
-            delta_html = f'<span style="color: #ef4444; font-size: 0.8rem;">↓ {delta:.1f}%</span>'
-        else:
-            delta_html = f'<span style="color: #64748b; font-size: 0.8rem;">— 0%</span>'
-    
-    st.markdown(f"""
-        <div class="metric-card {color_class}">
-            <div class="metric-title">{title}</div>
-            <div class="metric-value" style="color: inherit;">
-                {value:.{decimals}f} <span class="metric-unit">{unit}</span>
-            </div>
-            {delta_html}
-        </div>
-    """, unsafe_allow_html=True)
-
-
-# ================== MAIN APP ==================
-def main():
-    # Header
-    col1, col2 = st.columns([3, 1])
+    # Chọn thời gian
+    col1, col2 = st.columns(2)
     with col1:
-        st.markdown("""
-            <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 24px;">
-                <div style="width: 50px; height: 50px; background: linear-gradient(135deg, #facc15, #f97316); 
-                            border-radius: 12px; display: flex; align-items: center; justify-content: center; 
-                            font-size: 28px;">☀️</div>
-                <div>
-                    <h1 class="main-title">Solar Monitoring Dashboard</h1>
-                    <p class="subtitle">Real-time Sensor Data Visualization</p>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-    
+        date = st.date_input("Chọn ngày", value=datetime.now().date())
     with col2:
-        st.markdown(f"""
-            <div style="text-align: right; padding-top: 10px;">
-                <div style="font-family: 'JetBrains Mono', monospace; font-size: 1.5rem; color: #f1f5f9;">
-                    {datetime.now().strftime('%H:%M:%S')}
-                </div>
-                <div style="color: #64748b; font-size: 0.8rem;">
-                    {datetime.now().strftime('%A, %d %B %Y')}
-                </div>
-                <div class="status-connected" style="margin-top: 8px;">
-                    <span class="status-dot"></span> Firebase Connected
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
+        hour = st.slider("Chọn giờ", 0, 23, datetime.now().hour)
     
-    # Sidebar - Controls
-    with st.sidebar:
-        st.markdown("## ⚙️ Controls")
-        st.markdown("---")
-        
-        # Date picker
-        selected_date = st.date_input(
-            "📅 Select Date",
-            value=datetime.now().date(),
-            max_value=datetime.now().date()
-        )
-        
-        # Hour picker
-        selected_hour = st.number_input(
-            "🕐 Select Hour (0-23)",
-            min_value=0,
-            max_value=23,
-            value=datetime.now().hour
-        )
-        
-        st.markdown("---")
-        
-        # Load button
-        load_clicked = st.button("🔄 Load Data", use_container_width=True)
-        
-        # Auto refresh
-        auto_refresh = st.checkbox("⚡ Auto Refresh (10s)")
-        
-        st.markdown("---")
-        
-        # Export
-        if st.button("📥 Export CSV", use_container_width=True):
-            if 'df' in st.session_state and not st.session_state.df.empty:
-                csv = st.session_state.df.to_csv(index=False)
-                st.download_button(
-                    "💾 Download",
-                    csv,
-                    f"solar_data_{selected_date}_{selected_hour}h.csv",
-                    "text/csv",
-                    use_container_width=True
-                )
-            else:
-                st.warning("No data to export")
-        
-        st.markdown("---")
-        st.markdown("""
-            <div style="color: #64748b; font-size: 0.75rem; text-align: center;">
-                <p>Solar Monitoring v1.0</p>
-                <p>Powered by Streamlit + Firebase</p>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    # Initialize session state
-    if 'df' not in st.session_state:
-        st.session_state.df = pd.DataFrame()
-    
-    # Load data
-    if load_clicked or auto_refresh:
-        date_str = selected_date.strftime('%Y-%m-%d')
-        
-        # Hiển thị trạng thái loading
-        with st.spinner('Loading data from Firebase...'):
-            # Kiểm tra kết nối Firebase
-            # Bỏ comment dòng dưới sau khi cấu hình Firebase
-            # if init_firebase():
-            #     st.session_state.df = load_data_from_firebase(date_str, selected_hour)
-            
-            # Demo data (xóa khi sử dụng Firebase thật)
-            st.session_state.df = generate_demo_data()
-        
-        if st.session_state.df.empty:
-            st.warning("⚠️ No data found for selected date/time")
-        else:
-            st.success(f"✅ Loaded {len(st.session_state.df)} records successfully!")
-    
-    # Auto refresh
-    if auto_refresh:
-        time.sleep(10)
-        st.rerun()
-    
-    df = st.session_state.df
-    
-    # Metric Cards
-    st.markdown("### 📊 Current Readings")
-    
-    if not df.empty:
-        latest = df.iloc[-1]
-        prev = df.iloc[-2] if len(df) > 1 else latest
-        
-        # Calculate deltas
-        def calc_delta(curr, prev_val):
-            if prev_val == 0:
-                return 0
-            return ((curr - prev_val) / prev_val) * 100
-        
-        cols = st.columns(7)
-        
-        metrics = [
-            ("Voltage", latest['Voltage'], "V", calc_delta(latest['Voltage'], prev['Voltage']), "voltage", 2),
-            ("Current", latest['Current'], "A", calc_delta(latest['Current'], prev['Current']), "current", 3),
-            ("Power", latest['Power'], "mW", calc_delta(latest['Power'], prev['Power']), "power", 2),
-            ("Energy", latest['Energy'], "Wh", calc_delta(latest['Energy'], prev['Energy']), "energy", 2),
-            ("Lux", latest['Lux'], "Lux", calc_delta(latest['Lux'], prev['Lux']), "lux", 0),
-            ("Temp", latest['Temp'], "°C", calc_delta(latest['Temp'], prev['Temp']), "temp", 1),
-            ("Humidity", latest['Humidity'], "%", calc_delta(latest['Humidity'], prev['Humidity']), "humi", 1),
-        ]
-        
-        for i, (title, value, unit, delta, color, decimals) in enumerate(metrics):
-            with cols[i]:
-                render_metric_card(title, value, unit, delta, color, decimals)
-    else:
-        st.info("👆 Select date and hour, then click 'Load Data' to view metrics")
-    
-    # Charts
-    st.markdown("### 📈 Time Series Charts")
-    
-    chart_cols = st.columns(3)
-    
-    charts_config = [
-        ("Voltage", "⚡ Voltage", "rgb(34, 197, 94)", "V"),
-        ("Current", "🔌 Current", "rgb(59, 130, 246)", "A"),
-        ("Power", "💡 Power", "rgb(249, 115, 22)", "mW"),
-        ("Lux", "🌞 Illuminance", "rgb(250, 204, 21)", "Lux"),
-        ("Temp", "🌡️ Temperature", "rgb(239, 68, 68)", "°C"),
-        ("Humidity", "💧 Humidity", "rgb(6, 182, 212)", "%"),
-    ]
-    
-    for i, (column, title, color, y_label) in enumerate(charts_config):
-        with chart_cols[i % 3]:
-            fig = create_chart(df, column, title, color, y_label)
-            st.plotly_chart(fig, use_container_width=True)
-    
-    # Bottom section - Table and Stats
-    st.markdown("### 📋 Data Records & Statistics")
-    
-    col_table, col_stats = st.columns([2, 1])
-    
-    with col_table:
-        if not df.empty:
-            # Style DataFrame
-            styled_df = df.style.format({
-                'Voltage': '{:.2f}',
-                'Current': '{:.3f}',
-                'Power': '{:.2f}',
-                'Energy': '{:.2f}',
-                'Lux': '{:.0f}',
-                'Temp': '{:.1f}',
-                'Humidity': '{:.1f}'
-            }).set_properties(**{
-                'background-color': '#1e293b',
-                'color': '#f1f5f9',
-                'border-color': 'rgba(148, 163, 184, 0.1)'
-            })
-            
-            st.dataframe(
-                df.iloc[::-1],  # Newest first
-                use_container_width=True,
-                height=400
-            )
-        else:
-            st.markdown("""
-                <div style="background: #1e293b; border-radius: 12px; padding: 60px; text-align: center;">
-                    <div style="font-size: 48px; margin-bottom: 16px; opacity: 0.5;">📊</div>
-                    <p style="color: #94a3b8; margin-bottom: 8px;">No data loaded</p>
-                    <p style="color: #64748b; font-size: 0.85rem;">Select date and hour, then click Load Data</p>
-                </div>
-            """, unsafe_allow_html=True)
-    
-    with col_stats:
-        st.markdown("#### 📈 Statistics")
-        
-        if not df.empty:
-            stats_data = [
-                ("Voltage", "V"),
-                ("Current", "A"),
-                ("Power", "mW"),
-                ("Temp", "°C"),
-                ("Humidity", "%"),
-                ("Lux", "Lux")
-            ]
-            
-            for col_name, unit in stats_data:
-                stats = calculate_stats(df, col_name)
-                st.markdown(f"""
-                    <div style="display: flex; justify-content: space-between; padding: 8px 0; 
-                                border-bottom: 1px solid rgba(148, 163, 184, 0.1);">
-                        <span style="color: #94a3b8;">{col_name}</span>
-                        <span>
-                            <span style="color: #06b6d4;">{stats['min']:.2f}</span> / 
-                            <span style="color: #f1f5f9; font-weight: 600;">{stats['avg']:.2f}</span> / 
-                            <span style="color: #f97316;">{stats['max']:.2f}</span>
-                            <span style="color: #64748b;"> {unit}</span>
-                        </span>
-                    </div>
-                """, unsafe_allow_html=True)
-            
-            st.markdown(f"""
-                <div style="margin-top: 16px; padding: 12px; background: rgba(34, 197, 94, 0.1); 
-                            border-radius: 8px; text-align: center;">
-                    <span style="color: #22c55e;">📊 Total: {len(df)} records</span>
-                </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.info("Load data to view statistics")
-
-
-def generate_demo_data():
-    """Tạo dữ liệu demo để test (xóa khi dùng Firebase thật)"""
-    import random
-    
-    records = []
-    base_time = datetime.now().replace(minute=0, second=0)
-    
-    for i in range(60):
-        time_str = (base_time + timedelta(seconds=i*30)).strftime('%H:%M:%S')
-        records.append({
-            'Time': time_str,
-            'Voltage': 12 + random.uniform(-0.5, 0.5),
-            'Current': 0.5 + random.uniform(-0.1, 0.1),
-            'Power': 6000 + random.uniform(-500, 500),
-            'Energy': 100 + i * 0.5,
-            'Lux': 50000 + random.uniform(-5000, 5000),
-            'Temp': 28 + random.uniform(-2, 2),
-            'Humidity': 65 + random.uniform(-5, 5)
-        })
-    
-    return pd.DataFrame(records)
+    if st.button("📊 Phân tích", use_container_width=True, key="inline_analysis_btn"):
+        with st.spinner("Đang phân tích..."):
+            try:
+                # Lấy dữ liệu
+                hour_str = str(hour).zfill(2)
+                ref = db.reference(f'/sensor_data/{date}/{hour_str}')
+                data = ref.get()
+                
+                if not data:
+                    st.warning("Không có dữ liệu cho thời gian đã chọn")
+                    return
+                
+                # Chuyển đổi thành DataFrame
+                records = []
+                for time_key, values in data.items():
+                    records.append({
+                        'time': time_key,
+                        'U': values.get('U', 0),
+                        'Current': values.get('Current', 0),
+                        'milliWatt': values.get('milliWatt', 0),
+                        'Lux': values.get('Lux', 0),
+                        'Temp': values.get('Temp', 0),
+                        'Humi': values.get('Humi', 0)
+                    })
+                
+                df = pd.DataFrame(records)
+                
+                # Hiển thị thống kê
+                st.subheader("📈 Thống kê")
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Số bản ghi", len(df))
+                col2.metric("Công suất TB", f"{df['milliWatt'].mean():.1f} mW")
+                col3.metric("Nhiệt độ TB", f"{df['Temp'].mean():.1f} °C")
+                
+                # Hiển thị dữ liệu
+                st.subheader("📋 Dữ liệu chi tiết")
+                st.dataframe(df, use_container_width=True)
+                
+            except Exception as e:
+                st.error(f"Lỗi phân tích: {e}")
 
 
 if __name__ == "__main__":
     main()
-

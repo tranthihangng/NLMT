@@ -1,6 +1,7 @@
 # Firebase credentials - NEVER commit this!
 firebase-key.json
-*.json
+# Các file JSON khác có thể commit nếu cần
+# *.json
 
 # Python
 __pycache__/

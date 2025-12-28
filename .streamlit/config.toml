@@ -1,0 +1,13 @@
+# Streamlit Configuration
+# File này giúp tắt cảnh báo về secrets khi chạy local
+
+[server]
+headless = true
+
+[theme]
+primaryColor = "#3b82f6"
+backgroundColor = "#0f172a"
+secondaryBackgroundColor = "#1e293b"
+textColor = "#f1f5f9"
+font = "sans serif"
+
