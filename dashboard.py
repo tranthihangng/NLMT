@@ -374,25 +374,42 @@ def get_data_status(df: pd.DataFrame, connection_timeout: float = 10.0) -> tuple
     
     Args:
         df: DataFrame chứa dữ liệu
-        connection_timeout: Thời gian timeout (giây) để coi là mất kết nối
+        connection_timeout: Thời gian timeout (giây) để coi là mất kết nối (mặc định 10s)
     
     Returns:
         (status, is_connected): 
         - status: 'live', 'stale', 'no_data', 'disconnected'
-        - is_connected: True nếu còn kết nối, False nếu mất kết nối
+        - is_connected: True nếu còn kết nối, False nếu mất kết nối (>10s không có dữ liệu mới)
     """
     if df.empty:
         return 'no_data', False
     
-    # Kiểm tra thời gian cập nhật (nếu có datetime)
+    # Kiểm tra thời gian cập nhật - QUAN TRỌNG NHẤT
+    now = datetime.now()
+    last_update = None
+    
+    # Tìm thời gian cập nhật mới nhất
     if 'datetime' in df.columns:
-        now = datetime.now()
         last_update = df['datetime'].max()
-        time_diff = (now - last_update).total_seconds()
-        
-        # Mất kết nối nếu không có dữ liệu mới trong connection_timeout giây
-        if time_diff > connection_timeout:
-            return 'disconnected', False
+    elif 'time' in df.columns and not df.empty:
+        # Nếu chỉ có 'time', cố gắng parse
+        try:
+            date_str = str(datetime.now().date())
+            last_time_str = df['time'].iloc[-1]
+            last_update = datetime.strptime(f"{date_str} {last_time_str}", "%Y-%m-%d %H:%M:%S")
+        except:
+            pass
+    
+    # Nếu không tìm thấy thời gian cập nhật, coi như mất kết nối
+    if last_update is None:
+        return 'disconnected', False
+    
+    # Tính thời gian chênh lệch
+    time_diff = (now - last_update).total_seconds()
+    
+    # MẤT KẾT NỐI nếu không có dữ liệu mới trong connection_timeout giây
+    if time_diff > connection_timeout:
+        return 'disconnected', False
     
     # Kiểm tra dữ liệu mới nhất
     latest = df.iloc[-1]
@@ -1051,38 +1068,42 @@ def show_realtime_view(analyzer: SolarPanelAnalyzer, date: str, hour: int, clean
     col_header, col_status = st.columns([4, 1])
     with col_header:
         st.markdown("### 📊 Dashboard Real-time")
-    with col_status:
-        status_labels = {
-            'live': ('🟢 Live', 'data-status live'),
-            'stale': ('🟡 Cũ', 'data-status stale'),
-            'no_data': ('🔴 Không dữ liệu', 'data-status no-data'),
-            'disconnected': ('🔴 Mất kết nối', 'data-status no-data')
-        }
-        status_text, status_class = status_labels.get(data_status, ('❓', 'data-status'))
-        st.markdown(f'<span class="{status_class}">{status_text}</span>', unsafe_allow_html=True)
+    # with col_status:
+    #     status_labels = {
+    #         'live': ('🟢 Live', 'data-status live'),
+    #         'stale': ('🟡 Cũ', 'data-status stale'),
+    #         'no_data': ('🔴 Không dữ liệu', 'data-status no-data'),
+    #         'disconnected': ('🔴 Mất kết nối', 'data-status no-data')
+    #     }
+    #     status_text, status_class = status_labels.get(data_status, ('❓', 'data-status'))
+    #     st.markdown(f'<span class="{status_class}">{status_text}</span>', unsafe_allow_html=True)
     
-    # Hiển thị cảnh báo mất kết nối
+    # Hiển thị cảnh báo mất kết nối - NỔI BẬT
     if not is_connected:
-        st.error("⚠️ **MẤT KẾT NỐI**: Không nhận được dữ liệu mới trong 10 giây.")
+        st.error("""
+        ⚠️ **HỆ THỐNG MẤT KẾT NỐI**
+        """)
     
-    # Lấy dữ liệu ỔN ĐỊNH (không nhấp nháy)
-    latest = get_stable_latest_data(df, clean_method)
-    
-    if latest is None:
-        st.warning("Không thể lấy dữ liệu")
-        return
-    
-    # Nếu mất kết nối, đặt về 0
+    # Nếu mất kết nối, đặt TẤT CẢ về 0 ngay lập tức (không cần lấy dữ liệu)
     if not is_connected:
         latest = {
             'U': 0.0,
             'Current': 0.0,
             'milliWatt': 0.0,
-            'energy': latest.get('energy', 0.0),
+            'energy': st.session_state.last_valid_values.get('energy', 0.0),  # Giữ energy cuối cùng
             'Lux': 0.0,
             'Temp': 0.0,
-            'Humi': 0.0
+            'Humi': 0.0,
+            'datetime': datetime.now(),
+            'time': datetime.now().strftime("%H:%M:%S")
         }
+    else:
+        # Chỉ lấy dữ liệu nếu còn kết nối
+        latest = get_stable_latest_data(df, clean_method)
+        
+        if latest is None:
+            st.warning("Không thể lấy dữ liệu")
+            return
     
     # Tính hiệu suất
     irradiance = analyzer.lux_to_irradiance(latest['Lux'])
@@ -1660,11 +1681,11 @@ def show_historical_comparison(analyzer: SolarPanelAnalyzer, start_date: str, en
 
 if __name__ == "__main__":
     # Chỉ set_page_config khi chạy trực tiếp file này
-    st.set_page_config(
-        page_title="Solar Panel Monitoring System",
-        page_icon="☀️",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
+    # st.set_page_config(
+    #     page_title="Solar Panel Monitoring System",
+    #     page_icon="☀️",
+    #     layout="wide",
+    #     initial_sidebar_state="expanded"
+    # )
     main()
 

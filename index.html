@@ -134,24 +134,119 @@
                 getChartConfig('Humidity', 'rgb(6, 182, 212)', '%'));
         }
         
+        // ================== THEO DÕI KẾT NỐI ==================
+        let lastUpdateTime = null;
+        let connectionCheckInterval = null;
+        let isConnected = true;
+        let lastValidEnergy = 0;
+        
+        function checkConnection() {
+            if (lastUpdateTime === null) {
+                // Chưa có dữ liệu lần nào
+                return;
+            }
+            
+            const now = new Date();
+            const timeDiff = (now - lastUpdateTime) / 1000; // giây
+            
+            if (timeDiff > 10) {
+                // Mất kết nối > 10 giây
+                if (isConnected) {
+                    isConnected = false;
+                    showConnectionWarning();
+                    setAllMetricsToZero();
+                }
+            } else {
+                // Có kết nối
+                if (!isConnected) {
+                    isConnected = true;
+                    hideConnectionWarning();
+                }
+            }
+        }
+        
+        function showConnectionWarning() {
+            // Tạo hoặc cập nhật cảnh báo
+            let warningEl = document.getElementById('connection-warning');
+            if (!warningEl) {
+                warningEl = document.createElement('div');
+                warningEl.id = 'connection-warning';
+                warningEl.className = 'connection-warning';
+                warningEl.innerHTML = `
+                    <div class="warning-content">
+                        <span class="warning-icon">⚠️</span>
+                        <span class="warning-text">
+                            <strong>HỆ THỐNG MẤT KẾT NỐI</strong><br>
+                          
+                        </span>
+                    </div>
+                `;
+                document.querySelector('.main-content').insertBefore(warningEl, document.querySelector('.main-content').firstChild);
+            }
+            warningEl.style.display = 'block';
+        }
+        
+        function hideConnectionWarning() {
+            const warningEl = document.getElementById('connection-warning');
+            if (warningEl) {
+                warningEl.style.display = 'none';
+            }
+        }
+        
+        function setAllMetricsToZero() {
+            // Đặt tất cả thông số về 0 (trừ energy giữ giá trị cuối)
+            updateCard('voltage', 0, 0, 'V', 2);
+            updateCard('current', 0, 0, 'A', 3);
+            updateCard('power', 0, 0, 'mW', 2);
+            updateCard('energy', lastValidEnergy, lastValidEnergy, 'Wh', 2);
+            updateCard('lux', 0, 0, 'Lux', 0);
+            updateCard('temp', 0, 0, '°C', 1);
+            updateCard('humi', 0, 0, '%', 1);
+        }
+        
         // ================== CẬP NHẬT METRIC CARDS ==================
         function updateMetricCards(data) {
-            if (data.length === 0) return;
+            if (data.length === 0) {
+                // Nếu không có dữ liệu và đã mất kết nối, đặt về 0
+                if (!isConnected) {
+                    setAllMetricsToZero();
+                }
+                return;
+            }
             
             const latest = data[data.length - 1];
             const prev = data.length > 1 ? data[data.length - 2] : latest;
             
-            // Cập nhật giá trị và trend
-            updateCard('voltage', latest.U, prev.U, 'V', 2);
-            updateCard('current', latest.Current, prev.Current, 'A', 3);
-            updateCard('power', latest.milliWatt, prev.milliWatt, 'mW', 2);
-            updateCard('energy', latest.energy, prev.energy, 'Wh', 2);
-            updateCard('lux', latest.Lux, prev.Lux, 'Lux', 0);
-            updateCard('temp', latest.Temp, prev.Temp, '°C', 1);
-            updateCard('humi', latest.Humi, prev.Humi, '%', 1);
+            // Cập nhật thời gian cập nhật cuối cùng
+            try {
+                const [h, m, s] = latest.time.split(':').map(Number);
+                const now = new Date();
+                const updateTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, s);
+                lastUpdateTime = updateTime;
+                
+                // Lưu energy hợp lệ
+                if (latest.energy > 0) {
+                    lastValidEnergy = latest.energy;
+                }
+            } catch (e) {
+                console.error('Error parsing time:', e);
+                lastUpdateTime = new Date();
+            }
             
-            // Cập nhật thời gian
-            document.getElementById('lastUpdate').textContent = latest.time;
+            // Chỉ cập nhật nếu còn kết nối
+            if (isConnected) {
+                // Cập nhật giá trị và trend
+                updateCard('voltage', latest.U, prev.U, 'V', 2);
+                updateCard('current', latest.Current, prev.Current, 'A', 3);
+                updateCard('power', latest.milliWatt, prev.milliWatt, 'mW', 2);
+                updateCard('energy', latest.energy, prev.energy, 'Wh', 2);
+                updateCard('lux', latest.Lux, prev.Lux, 'Lux', 0);
+                updateCard('temp', latest.Temp, prev.Temp, '°C', 1);
+                updateCard('humi', latest.Humi, prev.Humi, '%', 1);
+                
+                // Cập nhật thời gian
+                document.getElementById('lastUpdate').textContent = latest.time;
+            }
         }
         
         function updateCard(id, current, previous, unit, decimals) {
@@ -533,6 +628,9 @@
             document.getElementById('dateInput').value = now.toISOString().split('T')[0];
             document.getElementById('hourInput').value = now.getHours();
             
+            // Bắt đầu kiểm tra kết nối mỗi giây
+            connectionCheckInterval = setInterval(checkConnection, 1000);
+            
             // Event listeners
             document.getElementById('loadBtn').addEventListener('click', () => {
                 loadData();
@@ -710,6 +808,50 @@
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
+        }
+        
+        /* ============ CONNECTION WARNING ============ */
+        .connection-warning {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(220, 38, 38, 0.1));
+            border: 2px solid rgba(239, 68, 68, 0.5);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 24px;
+            display: none;
+            animation: slideDown 0.3s ease-out;
+        }
+        
+        .connection-warning .warning-content {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .connection-warning .warning-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+        
+        .connection-warning .warning-text {
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+        
+        .connection-warning .warning-text strong {
+            color: #ef4444;
+            font-weight: 700;
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         
         /* ============ CONTROLS BAR ============ */

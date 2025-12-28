@@ -171,7 +171,7 @@ def main():
     # Sidebar
     with st.sidebar:
         st.image("https://img.icons8.com/fluency/96/solar-panel.png", width=80)
-        st.title("Chọn chế độ")
+        # st.title("Chọn chế độ")
         
         # Theme toggle - Thêm vào đây
         st.markdown("---")
@@ -210,30 +210,30 @@ def main():
             label_visibility="collapsed"
         )
         
+        # st.divider()
+        
+        # st.markdown("""
+        # ### 📌 Hướng dẫn
+        
+        # **Dashboard Real-time:**
+        # - Hiển thị dữ liệu trực tiếp
+        # - Cập nhật tự động
+        # - Giao diện nhẹ, nhanh
+        
+        # **Phân tích nâng cao:**
+        # - Phân tích hiệu suất
+        # - Phát hiện bất thường
+        # - Báo cáo chi tiết
+        # - So sánh lịch sử
+        # """)
+        
         st.divider()
         
-        st.markdown("""
-        ### 📌 Hướng dẫn
-        
-        **Dashboard Real-time:**
-        - Hiển thị dữ liệu trực tiếp
-        - Cập nhật tự động
-        - Giao diện nhẹ, nhanh
-        
-        **Phân tích nâng cao:**
-        - Phân tích hiệu suất
-        - Phát hiện bất thường
-        - Báo cáo chi tiết
-        - So sánh lịch sử
-        """)
-        
-        st.divider()
-        
-        st.markdown("""
-        ### 🔗 Liên kết
-        - [Firebase Console](https://console.firebase.google.com/)
-        - [Tài liệu hướng dẫn](./HUONG_DAN_CHAY.md)
-        """)
+        # st.markdown("""
+        # ### 🔗 Liên kết
+        # - [Firebase Console](https://console.firebase.google.com/)
+        # - [Tài liệu hướng dẫn](./HUONG_DAN_CHAY.md)
+        # """)
     
     # Main content based on mode
     if mode == "🏠 Trang chủ":
