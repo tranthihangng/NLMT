@@ -523,15 +523,34 @@ def get_data_status(df: pd.DataFrame, connection_timeout: float = 10.0) -> tuple
 
 
 # ================== HÀM LẤY DỮ LIỆU ==================
-@st.cache_data(ttl=1)  # Cache 1 giây - phù hợp với tần suất cập nhật 1s/lần
+@st.cache_data(ttl=1, show_spinner=False)  # Cache 1 giây - phù hợp với tần suất cập nhật 1s/lần
 def fetch_data_for_hour(date: str, hour: int, clean_method: str = 'auto_fill') -> pd.DataFrame:
     """
     Lấy dữ liệu từ Firebase cho một giờ cụ thể
     Cache 1s để tránh gọi Firebase liên tục nhưng vẫn cập nhật real-time
+    
+    Args:
+        date: Ngày theo format YYYY-MM-DD (ví dụ: "2025-12-28")
+        hour: Giờ từ 0-23
+        clean_method: Phương pháp làm sạch dữ liệu (không dùng ở đây)
+    
+    Returns:
+        DataFrame chứa dữ liệu hoặc DataFrame rỗng nếu không có dữ liệu
     """
     try:
-        hour_str = str(hour).zfill(2)
-        ref = db.reference(f'/sensor_data/{date}/{hour_str}')
+        # Đảm bảo format đúng: date phải là YYYY-MM-DD, hour phải là 00-23
+        if isinstance(date, datetime):
+            date = date.strftime("%Y-%m-%d")
+        elif hasattr(date, 'strftime'):
+            date = date.strftime("%Y-%m-%d")
+        else:
+            date = str(date)
+        
+        hour_str = str(int(hour)).zfill(2)  # Đảm bảo là số nguyên và có 2 chữ số
+        firebase_path = f'/sensor_data/{date}/{hour_str}'
+        
+        # Lấy dữ liệu từ Firebase
+        ref = db.reference(firebase_path)
         data = ref.get()
         
         if not data:
@@ -549,7 +568,11 @@ def fetch_data_for_hour(date: str, hour: int, clean_method: str = 'auto_fill') -
                         dt = datetime.strptime(f"{date} {time_key}", "%Y-%m-%d %H:%M:%S")
                 except ValueError:
                     # Fallback: parse format cơ bản
-                    dt = datetime.strptime(f"{date} {time_key}", "%Y-%m-%d %H:%M:%S")
+                    try:
+                        dt = datetime.strptime(f"{date} {time_key}", "%Y-%m-%d %H:%M:%S")
+                    except:
+                        # Nếu vẫn lỗi, dùng thời gian hiện tại
+                        dt = datetime.now()
                 
                 record = {
                     'time': time_key,
@@ -563,7 +586,7 @@ def fetch_data_for_hour(date: str, hour: int, clean_method: str = 'auto_fill') -
                     'Humi': float(values.get('Humi', 0) or 0)
                 }
                 records.append(record)
-            except (ValueError, TypeError) as e:
+            except (ValueError, TypeError, KeyError) as e:
                 continue  # Bỏ qua record lỗi
         
         if not records:
@@ -575,7 +598,10 @@ def fetch_data_for_hour(date: str, hour: int, clean_method: str = 'auto_fill') -
         
         return df
     except Exception as e:
-        # Không hiển thị lỗi để tránh spam - sẽ xử lý ở tầng view
+        # Log lỗi để debug (chỉ trong development)
+        import traceback
+        error_msg = f"Lỗi khi lấy dữ liệu từ Firebase: {str(e)}"
+        # Không hiển thị lỗi ở đây để tránh spam - sẽ xử lý ở tầng view
         return pd.DataFrame()
 
 
@@ -1101,10 +1127,18 @@ def main():
             - **Hiệu suất lý thuyết:** {(rated_power / (1000 * panel_area) * 100):.2f}% (tại STC)
             """)
         
-        # Nút refresh thủ công
-        if st.button("🔄 Làm mới ngay", use_container_width=True, key="dashboard_refresh"):
-            st.cache_data.clear()
-            st.rerun()
+        # Nút refresh thủ công và clear cache
+        col_refresh1, col_refresh2 = st.columns(2)
+        with col_refresh1:
+            if st.button("🔄 Làm mới ngay", use_container_width=True, key="dashboard_refresh"):
+                st.cache_data.clear()
+                st.rerun()
+        with col_refresh2:
+            if st.button("🗑️ Clear Cache", use_container_width=True, key="dashboard_clear_cache"):
+                st.cache_data.clear()
+                st.cache_resource.clear()
+                st.success("✅ Đã clear cache!")
+                st.rerun()
     
     # Main content
     if view_mode == "Real-time":
@@ -1118,16 +1152,22 @@ def main():
                 # Fallback nếu không có streamlit_autorefresh
                 st.info(f"💡 Trang sẽ tự động cập nhật. Bấm 'Làm mới ngay' nếu cần.")
         
-        show_realtime_view(analyzer, str(selected_date), selected_hour, clean_method)
+        # Đảm bảo format date giống hệt index.html (YYYY-MM-DD)
+        date_str = selected_date.strftime("%Y-%m-%d") if hasattr(selected_date, 'strftime') else str(selected_date)
+        show_realtime_view(analyzer, date_str, selected_hour, clean_method)
     
     elif view_mode == "Phân tích theo giờ":
-        show_hourly_analysis(analyzer, str(selected_date), selected_hour, clean_method)
+        date_str = selected_date.strftime("%Y-%m-%d") if hasattr(selected_date, 'strftime') else str(selected_date)
+        show_hourly_analysis(analyzer, date_str, selected_hour, clean_method)
     
     elif view_mode == "Phân tích theo ngày":
-        show_daily_analysis(analyzer, str(selected_date), clean_method)
+        date_str = selected_date.strftime("%Y-%m-%d") if hasattr(selected_date, 'strftime') else str(selected_date)
+        show_daily_analysis(analyzer, date_str, clean_method)
     
     else:
-        show_historical_comparison(analyzer, str(start_date), str(end_date), clean_method)
+        start_date_str = start_date.strftime("%Y-%m-%d") if hasattr(start_date, 'strftime') else str(start_date)
+        end_date_str = end_date.strftime("%Y-%m-%d") if hasattr(end_date, 'strftime') else str(end_date)
+        show_historical_comparison(analyzer, start_date_str, end_date_str, clean_method)
 
 
 def show_realtime_view(analyzer: SolarPanelAnalyzer, date: str, hour: int, clean_method: str = 'auto_fill'):
@@ -1139,25 +1179,60 @@ def show_realtime_view(analyzer: SolarPanelAnalyzer, date: str, hour: int, clean
     if 'last_update_time' not in st.session_state:
         st.session_state.last_update_time = datetime.now()
     
+    # Đảm bảo format date đúng (YYYY-MM-DD) - giống hệt index.html
+    if hasattr(date, 'strftime'):
+        date_str = date.strftime("%Y-%m-%d")
+    elif isinstance(date, datetime):
+        date_str = date.strftime("%Y-%m-%d")
+    else:
+        date_str = str(date)
+    
+    # Đảm bảo hour là số nguyên
+    hour_int = int(hour) if hour is not None else datetime.now().hour
+    
     # Lấy dữ liệu từ Firebase
-    df = fetch_data_for_hour(date, hour, clean_method)
+    df = fetch_data_for_hour(date_str, hour_int, clean_method)
     
     if df.empty:
-        hour_str = str(hour).zfill(2)
-        firebase_path = f'/sensor_data/{date}/{hour_str}'
-        st.warning(f"⚠️ **Không có dữ liệu** cho {date} lúc {hour}:00")
-        st.info(f"""
-        **Đường dẫn Firebase đang tìm:** `{firebase_path}`
+        hour_str = str(hour_int).zfill(2)
+        firebase_path = f'/sensor_data/{date_str}/{hour_str}'
         
-        **Nguyên nhân có thể:**
-        1. **Chưa có dữ liệu**: Sensor chưa gửi dữ liệu lên Firebase cho thời điểm này
-        2. **Format ngày khác**: Firebase có thể lưu ngày theo format khác
-        3. **Giờ không đúng**: Kiểm tra lại giờ đã chọn
+        # Thử kiểm tra trực tiếp Firebase để debug
+        has_data = None
+        data_count = 0
+        try:
+            test_ref = db.reference(firebase_path)
+            test_data = test_ref.get()
+            if test_data:
+                data_count = len(test_data) if isinstance(test_data, dict) else 0
+                has_data = data_count > 0
+        except Exception as e:
+            has_data = None
         
-        **Cách khắc phục:**
-        - Thử chọn **ngày/giờ khác** có dữ liệu
-        - Kiểm tra trong Firebase Console xem dữ liệu có ở đường dẫn trên không
-        - Đảm bảo sensor đang gửi dữ liệu lên Firebase
+        st.warning(f"⚠️ **Không có dữ liệu** cho {date_str} lúc {hour_int}:00")
+        
+        debug_info = f"""
+        **🔍 Thông tin debug:**
+        - **Đường dẫn Firebase:** `{firebase_path}`
+        - **Format date:** `{date_str}` (YYYY-MM-DD) ✅
+        - **Giờ:** `{hour_str}` (00-23) ✅
+        """
+        
+        if has_data is True:
+            debug_info += f"\n- ✅ **Firebase có {data_count} records** nhưng không parse được - có thể lỗi format dữ liệu"
+        elif has_data is False:
+            debug_info += "\n- ❌ **Firebase không có dữ liệu** ở đường dẫn này"
+        else:
+            debug_info += "\n- ⚠️ **Không thể kiểm tra Firebase** (có thể lỗi kết nối)"
+        
+        st.info(debug_info + f"""
+        
+        **💡 Cách khắc phục:**
+        1. Thử chọn **ngày/giờ khác** có dữ liệu (ví dụ: ngày hôm qua, giờ hiện tại)
+        2. Kiểm tra trong **Firebase Console** xem dữ liệu có ở đường dẫn trên không
+        3. So sánh với **Dashboard Real-time** (HTML) - nếu HTML lấy được thì format đúng
+        4. Click **"🗑️ Clear Cache"** để xóa cache và thử lại
+        5. Đảm bảo sensor đang gửi dữ liệu lên Firebase
         """)
         return
     
