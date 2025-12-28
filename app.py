@@ -417,22 +417,59 @@ def show_advanced_analysis():
         run_inline_analysis()
 
 
+def init_firebase_credentials():
+    """Khởi tạo Firebase credentials từ secrets hoặc file"""
+    import os
+    import firebase_admin
+    from firebase_admin import credentials
+    
+    if not firebase_admin._apps:
+        # Ưu tiên dùng Streamlit secrets (cho production/cloud)
+        # Fallback về file local (cho development)
+        if 'firebase' in st.secrets:
+            # Lấy credentials từ Streamlit secrets
+            firebase_config = st.secrets['firebase']
+            cred = credentials.Certificate({
+                "type": "service_account",
+                "project_id": firebase_config.get("project_id", ""),
+                "private_key_id": firebase_config.get("private_key_id", ""),
+                "private_key": firebase_config.get("private_key", "").replace('\\n', '\n'),
+                "client_email": firebase_config.get("client_email", ""),
+                "client_id": firebase_config.get("client_id", ""),
+                "auth_uri": firebase_config.get("auth_uri", "https://accounts.google.com/o/oauth2/auth"),
+                "token_uri": firebase_config.get("token_uri", "https://oauth2.googleapis.com/token"),
+                "auth_provider_x509_cert_url": firebase_config.get("auth_provider_x509_cert_url", ""),
+                "client_x509_cert_url": firebase_config.get("client_x509_cert_url", "")
+            })
+            database_url = firebase_config.get('databaseURL', 'https://nlmt-duy-default-rtdb.firebaseio.com')
+        elif os.path.exists("firebase-key.json"):
+            # Fallback: dùng file local nếu có (cho development)
+            cred = credentials.Certificate("firebase-key.json")
+            database_url = 'https://nlmt-duy-default-rtdb.firebaseio.com'
+        else:
+            raise FileNotFoundError(
+                "Không tìm thấy Firebase credentials. "
+                "Vui lòng cấu hình trong Streamlit secrets hoặc đặt file firebase-key.json"
+            )
+        
+        firebase_admin.initialize_app(cred, {
+            'databaseURL': database_url
+        })
+        return True
+    return True
+
 def run_inline_analysis():
     """Chạy phân tích nội tuyến nếu import dashboard thất bại"""
     import pandas as pd
     import firebase_admin
-    from firebase_admin import credentials, db
+    from firebase_admin import db
     from datetime import datetime
     
     st.subheader("🔬 Phân tích nâng cao (Chế độ nội tuyến)")
     
     # Khởi tạo Firebase
     try:
-        if not firebase_admin._apps:
-            cred = credentials.Certificate("firebase-key.json")
-            firebase_admin.initialize_app(cred, {
-                'databaseURL': 'https://nlmt-duy-default-rtdb.firebaseio.com'
-            })
+        init_firebase_credentials()
     except Exception as e:
         st.error(f"Lỗi kết nối Firebase: {e}")
         return
