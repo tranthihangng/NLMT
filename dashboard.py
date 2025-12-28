@@ -244,102 +244,65 @@ def apply_custom_css(theme='dark'):
 
 
 # ================== KHỞI TẠO FIREBASE ==================
-@st.cache_resource
 def init_firebase():
-    """Khởi tạo kết nối Firebase - Hỗ trợ Streamlit Secrets và file local"""
+    """Khởi tạo kết nối Firebase - Hỗ trợ Streamlit Secrets và file local
+    
+    Không dùng @st.cache_resource vì cần kiểm tra mỗi lần xem đã init chưa
+    """
     try:
-        if not firebase_admin._apps:
-            # Kiểm tra Streamlit secrets TRƯỚC (cho production/cloud)
-            has_secrets = False
+        # Kiểm tra xem Firebase đã được khởi tạo chưa (có thể từ app.py)
+        if firebase_admin._apps:
+            return True
+        
+        # Chưa khởi tạo - cần khởi tạo mới
+        # Kiểm tra Streamlit secrets TRƯỚC (cho production/cloud)
+        has_secrets = False
+        try:
+            has_secrets = 'firebase' in st.secrets and st.secrets['firebase'] is not None
+        except:
+            pass
+        
+        if has_secrets:
             try:
-                has_secrets = 'firebase' in st.secrets and st.secrets['firebase'] is not None
-            except:
-                # Nếu st.secrets không tồn tại hoặc lỗi, bỏ qua
-                pass
-            
-            if has_secrets:
-                # Lấy credentials từ Streamlit secrets
-                try:
-                    firebase_config = st.secrets['firebase']
-                    cred = credentials.Certificate({
-                        "type": "service_account",
-                        "project_id": firebase_config.get("project_id", ""),
-                        "private_key_id": firebase_config.get("private_key_id", ""),
-                        "private_key": firebase_config.get("private_key", "").replace('\\n', '\n'),
-                        "client_email": firebase_config.get("client_email", ""),
-                        "client_id": firebase_config.get("client_id", ""),
-                        "auth_uri": firebase_config.get("auth_uri", "https://accounts.google.com/o/oauth2/auth"),
-                        "token_uri": firebase_config.get("token_uri", "https://oauth2.googleapis.com/token"),
-                        "auth_provider_x509_cert_url": firebase_config.get("auth_provider_x509_cert_url", ""),
-                        "client_x509_cert_url": firebase_config.get("client_x509_cert_url", "")
-                    })
-                    database_url = firebase_config.get('databaseURL', 'https://nlmt-duy-default-rtdb.firebaseio.com')
-                except Exception as secrets_error:
-                    # Nếu lỗi khi đọc secrets, fallback về file
-                    if os.path.exists("firebase-key.json"):
-                        cred = credentials.Certificate("firebase-key.json")
-                        database_url = 'https://nlmt-duy-default-rtdb.firebaseio.com'
-                    else:
-                        raise FileNotFoundError(
-                            f"Lỗi đọc Streamlit secrets: {secrets_error}. "
-                            "Vui lòng cấu hình lại trong Settings → Secrets hoặc đặt file firebase-key.json"
-                        )
-            elif os.path.exists("firebase-key.json"):
-                # Fallback: dùng file local nếu có (cho development)
-                cred = credentials.Certificate("firebase-key.json")
-                database_url = 'https://nlmt-duy-default-rtdb.firebaseio.com'
-            else:
-                raise FileNotFoundError(
-                    "Không tìm thấy Firebase credentials.\n\n"
-                    "**Nếu chạy trên Streamlit Cloud:**\n"
-                    "1. Vào Settings → Secrets\n"
-                    "2. Thêm cấu hình Firebase (xem HUONG_DAN_STREAMLIT_SECRETS.md)\n\n"
-                    "**Nếu chạy local:**\n"
-                    "1. Đảm bảo file firebase-key.json có trong thư mục dự án"
-                )
-            
-            firebase_admin.initialize_app(cred, {
-                'databaseURL': database_url
-            })
-        return True
-    except FileNotFoundError as e:
-        # Hiển thị thông báo rõ ràng cho FileNotFoundError
-        error_msg = str(e)
-        if "firebase-key.json" in error_msg:
-            st.error(f"❌ **Lỗi cấu hình Firebase**: {error_msg}")
-            st.info("""
-            **Hướng dẫn khắc phục:**
-            
-            1. **Nếu chạy trên Streamlit Cloud:**
-               - Vào **Settings** → **Secrets**
-               - Thêm cấu hình Firebase (xem `HUONG_DAN_STREAMLIT_SECRETS.md`)
-            
-            2. **Nếu chạy local:**
-               - Đảm bảo file `firebase-key.json` có trong thư mục dự án
-            
-            3. **Xem chi tiết:** Mở file `HUONG_DAN_STREAMLIT_SECRETS.md`
-            """)
+                firebase_config = st.secrets['firebase']
+                cred = credentials.Certificate({
+                    "type": "service_account",
+                    "project_id": firebase_config.get("project_id", ""),
+                    "private_key_id": firebase_config.get("private_key_id", ""),
+                    "private_key": firebase_config.get("private_key", "").replace('\\n', '\n'),
+                    "client_email": firebase_config.get("client_email", ""),
+                    "client_id": firebase_config.get("client_id", ""),
+                    "auth_uri": firebase_config.get("auth_uri", "https://accounts.google.com/o/oauth2/auth"),
+                    "token_uri": firebase_config.get("token_uri", "https://oauth2.googleapis.com/token"),
+                    "auth_provider_x509_cert_url": firebase_config.get("auth_provider_x509_cert_url", ""),
+                    "client_x509_cert_url": firebase_config.get("client_x509_cert_url", "")
+                })
+                database_url = firebase_config.get('databaseURL', 'https://nlmt-duy-default-rtdb.firebaseio.com')
+            except Exception as secrets_error:
+                if os.path.exists("firebase-key.json"):
+                    cred = credentials.Certificate("firebase-key.json")
+                    database_url = 'https://nlmt-duy-default-rtdb.firebaseio.com'
+                else:
+                    raise FileNotFoundError(f"Lỗi đọc Streamlit secrets: {secrets_error}")
+        elif os.path.exists("firebase-key.json"):
+            cred = credentials.Certificate("firebase-key.json")
+            database_url = 'https://nlmt-duy-default-rtdb.firebaseio.com'
         else:
-            st.error(f"❌ **Lỗi**: {error_msg}")
+            raise FileNotFoundError("Không tìm thấy Firebase credentials")
+        
+        firebase_admin.initialize_app(cred, {'databaseURL': database_url})
+        return True
+        
+    except FileNotFoundError as e:
+        st.error(f"❌ **Lỗi cấu hình Firebase**: {e}")
+        st.info("""
+        **Hướng dẫn khắc phục:**
+        1. **Streamlit Cloud:** Vào **Settings** → **Secrets** → Thêm cấu hình Firebase
+        2. **Local:** Đảm bảo file `firebase-key.json` có trong thư mục dự án
+        """)
         return False
     except Exception as e:
-        error_msg = str(e)
-        if "firebase-key.json" in error_msg:
-            st.error(f"❌ **Lỗi cấu hình Firebase**: {error_msg}")
-            st.info("""
-            **Hướng dẫn khắc phục:**
-            
-            1. **Nếu chạy trên Streamlit Cloud:**
-               - Vào **Settings** → **Secrets**
-               - Thêm cấu hình Firebase (xem `HUONG_DAN_STREAMLIT_SECRETS.md`)
-            
-            2. **Nếu chạy local:**
-               - Đảm bảo file `firebase-key.json` có trong thư mục dự án
-            
-            3. **Xem chi tiết:** Mở file `HUONG_DAN_STREAMLIT_SECRETS.md`
-            """)
-        else:
-            st.error(f"❌ **Lỗi kết nối Firebase**: {error_msg}")
+        st.error(f"❌ **Lỗi kết nối Firebase**: {e}")
         return False
 
 
@@ -1065,73 +1028,18 @@ def main():
         
         st.divider()
         
-        # Cấu hình tấm pin
-        st.subheader("⚙️ Thông số tấm pin")
-        with st.expander("Cấu hình", expanded=True):
-            st.markdown("**📊 Thông số công suất tối đa (MPP):**")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                rated_power = st.number_input("Pmax (W)", value=20.0, min_value=0.1, step=0.1, help="Công suất tối đa")
-            with col2:
-                rated_voltage = st.number_input("Vmp (V)", value=16.0, min_value=0.1, step=0.1, help="Điện áp tại công suất tối đa")
-            with col3:
-                rated_current = st.number_input("Imp (A)", value=1.25, min_value=0.01, step=0.01, help="Dòng điện tại công suất tối đa")
-            
-            st.markdown("**🔌 Thông số mạch hở/ngắn mạch:**")
-            col4, col5 = st.columns(2)
-            with col4:
-                voc = st.number_input("Voc - Điện áp mạch hở (V)", value=19.2, min_value=0.1, step=0.1, help="Open Circuit Voltage")
-            with col5:
-                isc = st.number_input("Isc - Dòng ngắn mạch (A)", value=1.5, min_value=0.01, step=0.01, help="Short Circuit Current")
-            
-            st.markdown("**📐 Kích thước tấm pin:**")
-            col6, col7, col8 = st.columns(3)
-            with col6:
-                panel_length = st.number_input("Chiều dài (m)", value=0.4, min_value=0.01, step=0.01, help="400mm = 0.4m")
-            with col7:
-                panel_width = st.number_input("Chiều rộng (m)", value=0.35, min_value=0.01, step=0.01, help="350mm = 0.35m")
-            with col8:
-                panel_thickness = st.number_input("Độ dày (m)", value=0.017, min_value=0.001, step=0.001, format="%.3f", help="17mm = 0.017m")
-            
-            # Tính diện tích tự động
-            panel_area = panel_length * panel_width
-            st.info(f"📏 **Diện tích tấm pin:** {panel_area:.3f} m² (tự động tính từ {panel_length}m × {panel_width}m)")
-            
-            st.markdown("**🌡️ Thông số nhiệt độ:**")
-            temp_coefficient = st.number_input(
-                "Hệ số nhiệt độ (%/°C)", 
-                value=-0.004, 
-                min_value=-0.01, 
-                max_value=0.0, 
-                step=0.0001,
-                format="%.4f",
-                help="Hệ số suy giảm công suất theo nhiệt độ. Thường -0.4% đến -0.5%/°C"
-            )
-            
-            st.markdown("**📋 Điều kiện tiêu chuẩn STC:**")
-            st.caption("💡 STC: 1000 W/m², AM 1.5, 25°C (tiêu chuẩn - không đổi)")
-            
-            # Cập nhật tất cả thông số
-            analyzer.specs.rated_power = rated_power
-            analyzer.specs.rated_voltage = rated_voltage
-            analyzer.specs.rated_current = rated_current
-            analyzer.specs.open_circuit_voltage = voc
-            analyzer.specs.short_circuit_current = isc
-            analyzer.specs.panel_area = panel_area
-            analyzer.specs.panel_length = panel_length
-            analyzer.specs.panel_width = panel_width
-            analyzer.specs.panel_thickness = panel_thickness
-            analyzer.specs.temp_coefficient = temp_coefficient
-            
-            # Hiển thị thông tin tóm tắt
-            st.markdown("---")
+        # Hiển thị thông số tấm pin (chỉ xem, không edit)
+        st.subheader("☀️ Thông số tấm pin")
+        with st.expander("📋 Xem thông số", expanded=False):
             st.markdown(f"""
-            **📊 Tóm tắt thông số:**
-            - **Công suất:** {rated_power}W @ {rated_voltage}V / {rated_current}A
-            - **Mạch hở:** {voc}V | **Ngắn mạch:** {isc}A
-            - **Kích thước:** {panel_length}m × {panel_width}m × {panel_thickness}m
-            - **Diện tích:** {panel_area:.3f} m²
-            - **Hiệu suất lý thuyết:** {(rated_power / (1000 * panel_area) * 100):.2f}% (tại STC)
+            **📊 Thông số công suất:**
+            - **Pmax:** {analyzer.specs.rated_power}W
+            - **Vmp:** {analyzer.specs.rated_voltage}V
+            - **Imp:** {analyzer.specs.rated_current}A
+            
+            **📐 Kích thước:** 400×350×17mm ({analyzer.specs.panel_area:.3f} m²)
+            
+            **🌡️ STC:** 1000 W/m², 25°C
             """)
         
         # Nút refresh thủ công và clear cache
@@ -1207,39 +1115,44 @@ def show_realtime_view(analyzer: SolarPanelAnalyzer, date: str, hour: int, clean
         # Thử kiểm tra trực tiếp Firebase để debug
         has_data = None
         data_count = 0
+        error_msg = None
         try:
-            test_ref = db.reference(firebase_path)
-            test_data = test_ref.get()
-            if test_data:
-                data_count = len(test_data) if isinstance(test_data, dict) else 0
-                has_data = data_count > 0
+            # Kiểm tra Firebase đã init chưa
+            if not firebase_admin._apps:
+                error_msg = "Firebase chưa được khởi tạo"
+            else:
+                test_ref = db.reference(firebase_path)
+                test_data = test_ref.get()
+                if test_data:
+                    data_count = len(test_data) if isinstance(test_data, dict) else 0
+                    has_data = data_count > 0
+                else:
+                    has_data = False
         except Exception as e:
+            error_msg = str(e)
             has_data = None
         
         st.warning(f"⚠️ **Không có dữ liệu** cho {date_str} lúc {hour_int}:00")
         
         debug_info = f"""
-        **🔍 Thông tin debug:**
-        - **Đường dẫn Firebase:** `{firebase_path}`
-        - **Format date:** `{date_str}` (YYYY-MM-DD) ✅
-        - **Giờ:** `{hour_str}` (00-23) ✅
-        """
+**🔍 Thông tin debug:**
+- **Đường dẫn Firebase:** `{firebase_path}`
+- **Format date:** `{date_str}` (YYYY-MM-DD) ✅
+- **Giờ:** `{hour_str}` (00-23) ✅
+"""
         
         if has_data is True:
-            debug_info += f"\n- ✅ **Firebase có {data_count} records** nhưng không parse được - có thể lỗi format dữ liệu"
+            debug_info += f"- ✅ **Firebase có {data_count} records** nhưng không parse được\n"
         elif has_data is False:
-            debug_info += "\n- ❌ **Firebase không có dữ liệu** ở đường dẫn này"
+            debug_info += "- ❌ **Firebase không có dữ liệu** ở đường dẫn này\n"
         else:
-            debug_info += "\n- ⚠️ **Không thể kiểm tra Firebase** (có thể lỗi kết nối)"
+            debug_info += f"- ⚠️ **Lỗi kết nối Firebase:** {error_msg}\n"
         
-        st.info(debug_info + f"""
-        
-        **💡 Cách khắc phục:**
-        1. Thử chọn **ngày/giờ khác** có dữ liệu (ví dụ: ngày hôm qua, giờ hiện tại)
-        2. Kiểm tra trong **Firebase Console** xem dữ liệu có ở đường dẫn trên không
-        3. So sánh với **Dashboard Real-time** (HTML) - nếu HTML lấy được thì format đúng
-        4. Click **"🗑️ Clear Cache"** để xóa cache và thử lại
-        5. Đảm bảo sensor đang gửi dữ liệu lên Firebase
+        st.info(debug_info + """
+**💡 Cách khắc phục:**
+1. Thử chọn **ngày/giờ khác** (sensor có thể chưa gửi dữ liệu cho giờ này)
+2. Kiểm tra **Dashboard Real-time (HTML)** - nếu lấy được là OK
+3. Click **"🗑️ Clear Cache"** rồi thử lại
         """)
         return
     
