@@ -1,20 +1,21 @@
-# Hướng dẫn cấu hình Firebase trên Streamlit Cloud
+# 🔐 Hướng dẫn cấu hình Firebase trên Streamlit Cloud
 
-## Vấn đề
-File `firebase-key.json` chứa thông tin nhạy cảm (private key) nên **KHÔNG NÊN** commit lên GitHub. GitHub sẽ tự động chặn push nếu phát hiện secret.
+## ⚠️ Vấn đề
+Khi chạy app trên Streamlit Cloud, file `firebase-key.json` không có sẵn (vì lý do bảo mật). Bạn cần cấu hình Firebase credentials qua **Streamlit Secrets**.
 
-## Giải pháp: Dùng Streamlit Secrets
+## 📋 Các bước cấu hình
 
-### Bước 1: Lấy nội dung file firebase-key.json
-Mở file `firebase-key.json` và copy toàn bộ nội dung JSON.
+### Bước 1: Vào Streamlit Cloud Dashboard
+1. Truy cập: https://share.streamlit.io/
+2. Đăng nhập vào tài khoản của bạn
+3. Chọn app **nlmt-duy** (hoặc tên app của bạn)
 
-### Bước 2: Cấu hình trên Streamlit Cloud
+### Bước 2: Mở Settings và Secrets
+1. Click vào **⚙️ Settings** (ở góc dưới bên trái sidebar)
+2. Trong menu, click **🔐 Secrets**
 
-1. Vào **Streamlit Cloud Dashboard**: https://share.streamlit.io/
-2. Chọn app của bạn
-3. Click **"Settings"** (⚙️) ở góc dưới bên trái
-4. Click **"Secrets"** trong menu
-5. Thêm cấu hình sau:
+### Bước 3: Thêm cấu hình Firebase
+Copy **TOÀN BỘ** nội dung sau và paste vào editor:
 
 ```toml
 [firebase]
@@ -31,23 +32,60 @@ client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/fireba
 databaseURL = "https://nlmt-duy-default-rtdb.firebaseio.com"
 ```
 
-**Lưu ý quan trọng:**
-- Copy **toàn bộ** private_key (bao gồm cả `\n` ở cuối)
-- Giữ nguyên format `\n` trong private_key
-- Click **"Save"** sau khi thêm
+### Bước 4: Lưu và chờ redeploy
+1. Click nút **💾 Save** (hoặc **Save secrets**)
+2. Streamlit Cloud sẽ tự động redeploy app
+3. Chờ vài phút để app redeploy xong
 
-### Bước 3: Deploy lại app
-Sau khi lưu secrets, Streamlit Cloud sẽ tự động redeploy app. App sẽ tự động đọc credentials từ secrets.
+### Bước 5: Kiểm tra
+1. Refresh trang app
+2. Vào phần **"🔬 Phân tích nâng cao"**
+3. Nếu không còn lỗi Firebase, bạn đã cấu hình thành công! ✅
 
-## Cách hoạt động
+## 📸 Hình ảnh minh họa
 
-Code đã được cập nhật để:
-1. **Ưu tiên** đọc từ Streamlit Secrets (cho production/cloud)
-2. **Fallback** về file `firebase-key.json` (cho development local)
+```
+Streamlit Cloud Dashboard
+├── [App của bạn]
+│   ├── ⚙️ Settings
+│   │   └── 🔐 Secrets  ← Click vào đây!
+│   │       └── [Editor để paste cấu hình]
+│   │           └── 💾 Save
+```
 
-## Lợi ích
+## ⚠️ Lưu ý quan trọng
 
-✅ **Bảo mật**: Credentials không bị lộ trên GitHub  
-✅ **An toàn**: Streamlit Cloud mã hóa và bảo vệ secrets  
-✅ **Dễ quản lý**: Có thể cập nhật secrets mà không cần commit code mới
+1. **Copy TOÀN BỘ** private_key (bao gồm cả `\n` ở cuối)
+2. **Giữ nguyên format** - không thay đổi bất kỳ ký tự nào
+3. **Đảm bảo** có dấu `[firebase]` ở đầu
+4. **Sau khi save**, app sẽ tự động redeploy (có thể mất 1-2 phút)
+
+## 🔍 Kiểm tra nếu vẫn lỗi
+
+Nếu sau khi cấu hình vẫn còn lỗi:
+
+1. **Kiểm tra lại Secrets:**
+   - Vào Settings → Secrets
+   - Đảm bảo có section `[firebase]`
+   - Đảm bảo tất cả các trường đã được điền
+
+2. **Kiểm tra format:**
+   - Private key phải có `\n` ở cuối
+   - Không có dấu ngoặc kép thừa
+   - Format TOML đúng
+
+3. **Reboot app:**
+   - Vào Settings → General
+   - Click **"Reboot app"** để force redeploy
+
+## ✅ Sau khi cấu hình thành công
+
+App sẽ:
+- ✅ Kết nối Firebase thành công
+- ✅ Hiển thị dữ liệu từ Firebase
+- ✅ Không còn lỗi "No such file or directory"
+
+---
+
+**Nếu vẫn gặp vấn đề, vui lòng kiểm tra lại các bước trên hoặc liên hệ hỗ trợ.**
 

@@ -1143,7 +1143,22 @@ def show_realtime_view(analyzer: SolarPanelAnalyzer, date: str, hour: int, clean
     df = fetch_data_for_hour(date, hour, clean_method)
     
     if df.empty:
-        st.warning(f"⚠️ Không có dữ liệu cho {date} lúc {hour}:00")
+        hour_str = str(hour).zfill(2)
+        firebase_path = f'/sensor_data/{date}/{hour_str}'
+        st.warning(f"⚠️ **Không có dữ liệu** cho {date} lúc {hour}:00")
+        st.info(f"""
+        **Đường dẫn Firebase đang tìm:** `{firebase_path}`
+        
+        **Nguyên nhân có thể:**
+        1. **Chưa có dữ liệu**: Sensor chưa gửi dữ liệu lên Firebase cho thời điểm này
+        2. **Format ngày khác**: Firebase có thể lưu ngày theo format khác
+        3. **Giờ không đúng**: Kiểm tra lại giờ đã chọn
+        
+        **Cách khắc phục:**
+        - Thử chọn **ngày/giờ khác** có dữ liệu
+        - Kiểm tra trong Firebase Console xem dữ liệu có ở đường dẫn trên không
+        - Đảm bảo sensor đang gửi dữ liệu lên Firebase
+        """)
         return
     
     # Kiểm tra trạng thái kết nối
