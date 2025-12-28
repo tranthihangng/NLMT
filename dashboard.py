@@ -523,7 +523,7 @@ def get_data_status(df: pd.DataFrame, connection_timeout: float = 10.0) -> tuple
 
 
 # ================== HÀM LẤY DỮ LIỆU ==================
-@st.cache_data(ttl=1, show_spinner=False)  # Cache 1 giây - phù hợp với tần suất cập nhật 1s/lần
+# Tắt cache để đảm bảo luôn lấy dữ liệu mới nhất từ Firebase (giống index.html)
 def fetch_data_for_hour(date: str, hour: int, clean_method: str = 'auto_fill') -> pd.DataFrame:
     """
     Lấy dữ liệu từ Firebase cho một giờ cụ thể
@@ -538,16 +538,19 @@ def fetch_data_for_hour(date: str, hour: int, clean_method: str = 'auto_fill') -
         DataFrame chứa dữ liệu hoặc DataFrame rỗng nếu không có dữ liệu
     """
     try:
-        # Đảm bảo format đúng: date phải là YYYY-MM-DD, hour phải là 00-23
+        # Đảm bảo format đúng: date phải là YYYY-MM-DD, hour phải là 00-23 (GIỐNG HỆT index.html)
         if isinstance(date, datetime):
-            date = date.strftime("%Y-%m-%d")
+            date_str = date.strftime("%Y-%m-%d")
         elif hasattr(date, 'strftime'):
-            date = date.strftime("%Y-%m-%d")
+            date_str = date.strftime("%Y-%m-%d")
         else:
-            date = str(date)
+            date_str = str(date).strip()
         
-        hour_str = str(int(hour)).zfill(2)  # Đảm bảo là số nguyên và có 2 chữ số
-        firebase_path = f'/sensor_data/{date}/{hour_str}'
+        # Đảm bảo hour là số nguyên và format đúng (giống index.html: String(hourInput).padStart(2, '0'))
+        hour_int = int(hour) if hour is not None else datetime.now().hour
+        hour_str = str(hour_int).zfill(2)  # padStart(2, '0') trong JS = zfill(2) trong Python
+        
+        firebase_path = f'/sensor_data/{date_str}/{hour_str}'
         
         # Lấy dữ liệu từ Firebase
         ref = db.reference(firebase_path)
@@ -559,21 +562,24 @@ def fetch_data_for_hour(date: str, hour: int, clean_method: str = 'auto_fill') -
         records = []
         for time_key, values in data.items():
             try:
-                # Xử lý timestamp - có thể có format khác nhau (H:M:S hoặc H:M:S.microseconds)
+                # Xử lý timestamp - GIỐNG HỆT index.html (không sort, chỉ parse)
+                # index.html không parse datetime, chỉ dùng time_key
                 try:
                     # Thử parse với format có milliseconds
                     if '.' in time_key:
-                        dt = datetime.strptime(f"{date} {time_key}", "%Y-%m-%d %H:%M:%S.%f")
+                        dt = datetime.strptime(f"{date_str} {time_key}", "%Y-%m-%d %H:%M:%S.%f")
                     else:
-                        dt = datetime.strptime(f"{date} {time_key}", "%Y-%m-%d %H:%M:%S")
+                        dt = datetime.strptime(f"{date_str} {time_key}", "%Y-%m-%d %H:%M:%S")
                 except ValueError:
                     # Fallback: parse format cơ bản
                     try:
-                        dt = datetime.strptime(f"{date} {time_key}", "%Y-%m-%d %H:%M:%S")
+                        dt = datetime.strptime(f"{date_str} {time_key}", "%Y-%m-%d %H:%M:%S")
                     except:
                         # Nếu vẫn lỗi, dùng thời gian hiện tại
                         dt = datetime.now()
                 
+                # Parse dữ liệu - GIỐNG HỆT index.html
+                # index.html: record.U = record.U || 0
                 record = {
                     'time': time_key,
                     'datetime': dt,
@@ -586,7 +592,8 @@ def fetch_data_for_hour(date: str, hour: int, clean_method: str = 'auto_fill') -
                     'Humi': float(values.get('Humi', 0) or 0)
                 }
                 records.append(record)
-            except (ValueError, TypeError, KeyError) as e:
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                # Log lỗi để debug (chỉ trong development)
                 continue  # Bỏ qua record lỗi
         
         if not records:
