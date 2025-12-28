@@ -1,4 +1,4 @@
-# Firebase credentials - NEVER commit this!
+# Firebase credentials - KHÔNG commit file này!
 firebase-key.json
 # Các file JSON khác có thể commit nếu cần
 # *.json
