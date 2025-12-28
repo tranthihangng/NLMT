@@ -149,8 +149,8 @@
             const now = new Date();
             const timeDiff = (now - lastUpdateTime) / 1000; // giây
             
-            if (timeDiff > 10) {
-                // Mất kết nối > 10 giây
+            if (timeDiff > 60) {
+                // Mất kết nối > 60 giây
                 if (isConnected) {
                     isConnected = false;
                     showConnectionWarning();

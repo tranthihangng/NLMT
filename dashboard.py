@@ -457,18 +457,18 @@ def clean_zero_data(df: pd.DataFrame, method: str = 'auto_fill', last_valid_valu
     return df_cleaned
 
 
-def get_data_status(df: pd.DataFrame, connection_timeout: float = 10.0) -> tuple[str, bool]:
+def get_data_status(df: pd.DataFrame, connection_timeout: float = 60.0) -> tuple[str, bool]:
     """
     Xác định trạng thái dữ liệu và kiểm tra mất kết nối
     
     Args:
         df: DataFrame chứa dữ liệu
-        connection_timeout: Thời gian timeout (giây) để coi là mất kết nối (mặc định 10s)
+        connection_timeout: Thời gian timeout (giây) để coi là mất kết nối (mặc định 60s)
     
     Returns:
         (status, is_connected): 
         - status: 'live', 'stale', 'no_data', 'disconnected'
-        - is_connected: True nếu còn kết nối, False nếu mất kết nối (>10s không có dữ liệu mới)
+        - is_connected: True nếu còn kết nối, False nếu mất kết nối (>60s không có dữ liệu mới)
     """
     if df.empty:
         return 'no_data', False
@@ -1237,8 +1237,8 @@ def show_realtime_view(analyzer: SolarPanelAnalyzer, date: str, hour: int, clean
             st.info("Kiểm tra **Streamlit Secrets** đã cấu hình Firebase chưa")
         return
     
-    # Kiểm tra trạng thái kết nối
-    data_status, is_connected = get_data_status(df, connection_timeout=10.0)
+    # Kiểm tra trạng thái kết nối (60 giây timeout)
+    data_status, is_connected = get_data_status(df, connection_timeout=60.0)
     
     # Layout header với trạng thái
     col_header, col_status = st.columns([4, 1])
