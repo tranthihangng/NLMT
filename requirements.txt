@@ -1,8 +1,8 @@
 streamlit==1.40.0
 firebase-admin==6.4.0
 plotly==5.24.0
-pandas==2.2.0
-numpy==1.26.4
+pandas>=2.2.2
+numpy>=1.26.4
 python-dateutil==2.8.2
-scipy==1.12.0
+scipy>=1.12.0
 streamlit-autorefresh==1.0.1
