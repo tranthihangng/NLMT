@@ -27,31 +27,38 @@ from analysis import SolarPanelAnalyzer, PanelSpecs, AlertLevel
 def apply_custom_css(theme='dark'):
     """Áp dụng CSS tùy chỉnh với hỗ trợ dark/light mode - Phiên bản chuyên nghiệp"""
     
+    # Lưu theme vào session state để các function khác sử dụng
+    st.session_state.current_theme = theme
+    
     # Định nghĩa màu sắc theo theme
     if theme == 'light':
-        # Theme sáng - Phong cách Clean & Modern
-        bg_gradient = "linear-gradient(135deg, #f0f4f8 0%, #ffffff 50%, #f0f4f8 100%)"
-        sidebar_bg = "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)"
-        card_bg = "linear-gradient(145deg, #ffffff 0%, #f8fafc 100%)"
-        card_shadow = "0 4px 15px -3px rgba(0, 0, 0, 0.08)"
-        card_hover_shadow = "0 10px 25px -5px rgba(0, 0, 0, 0.12)"
-        text_primary = "#1a202c"
-        text_secondary = "#4a5568"
-        text_muted = "#718096"
-        border_color = "rgba(0, 0, 0, 0.08)"
-        accent_gradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+        # Theme sáng - Professional Light (dễ đọc, contrast tốt)
+        bg_gradient = "linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%)"
+        sidebar_bg = "linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%)"
+        card_bg = "#ffffff"
+        card_shadow = "0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04)"
+        card_hover_shadow = "0 8px 25px rgba(0, 0, 0, 0.12)"
+        text_primary = "#0f172a"  # Đậm hơn để dễ đọc
+        text_secondary = "#334155"  # Đậm hơn
+        text_muted = "#64748b"
+        border_color = "#e2e8f0"
+        accent_gradient = "linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)"
+        chart_text_color = "#334155"
+        chart_grid_color = "rgba(51, 65, 85, 0.1)"
     else:
-        # Theme tối - Phong cách Premium Dark
-        bg_gradient = "linear-gradient(135deg, #0a0f1a 0%, #1a1f2e 50%, #0a0f1a 100%)"
-        sidebar_bg = "linear-gradient(180deg, #1a1f2e 0%, #0a0f1a 100%)"
-        card_bg = "linear-gradient(145deg, #1e2538 0%, #2d3548 100%)"
-        card_shadow = "0 4px 15px -3px rgba(0, 0, 0, 0.4)"
-        card_hover_shadow = "0 10px 25px -5px rgba(0, 0, 0, 0.5)"
-        text_primary = "#f7fafc"
-        text_secondary = "#a0aec0"
-        text_muted = "#718096"
-        border_color = "rgba(255, 255, 255, 0.06)"
+        # Theme tối - Premium Dark (dễ nhìn ban đêm)
+        bg_gradient = "linear-gradient(180deg, #0f172a 0%, #1e293b 100%)"
+        sidebar_bg = "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)"
+        card_bg = "#1e293b"
+        card_shadow = "0 2px 8px rgba(0, 0, 0, 0.3)"
+        card_hover_shadow = "0 8px 25px rgba(0, 0, 0, 0.4)"
+        text_primary = "#f1f5f9"
+        text_secondary = "#cbd5e1"
+        text_muted = "#94a3b8"
+        border_color = "#334155"
         accent_gradient = "linear-gradient(135deg, #f59e0b 0%, #f97316 100%)"
+        chart_text_color = "#cbd5e1"
+        chart_grid_color = "rgba(148, 163, 184, 0.15)"
     
     st.markdown(f"""
 <style>
@@ -238,6 +245,40 @@ def apply_custom_css(theme='dark'):
     .data-status.no-data {{
         background: rgba(239, 68, 68, 0.2);
         color: #dc2626;
+    }}
+    
+    /* ===== CHART CONTAINERS - FIXED SIZE ===== */
+    [data-testid="stPlotlyChart"] {{
+        max-height: 400px !important;
+        overflow: hidden !important;
+    }}
+    
+    [data-testid="stPlotlyChart"] > div {{
+        max-height: 400px !important;
+    }}
+    
+    /* Responsive text for light theme */
+    {'[data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] li { color: ' + text_primary + ' !important; }' if theme == 'light' else ''}
+    
+    /* Better metric styling */
+    [data-testid="stMetricValue"] {{
+        color: {text_primary} !important;
+        font-weight: 700;
+    }}
+    
+    [data-testid="stMetricLabel"] {{
+        color: {text_muted} !important;
+    }}
+    
+    /* Info/Warning/Error boxes */
+    .stAlert {{
+        border-radius: 12px;
+    }}
+    
+    /* DataFrame styling */
+    [data-testid="stDataFrame"] {{
+        border-radius: 12px;
+        overflow: hidden;
     }}
 </style>
 """, unsafe_allow_html=True)
@@ -732,63 +773,105 @@ def create_realtime_gauge(value: float, title: str, min_val: float, max_val: flo
         }
     ))
     
+    colors_theme = get_chart_colors()
     fig.update_layout(
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font={'color': '#f1f5f9'},
-        height=200,
+        paper_bgcolor=colors_theme['bg'],
+        plot_bgcolor=colors_theme['bg'],
+        font={'color': colors_theme['text']},
+        height=180,
         margin=dict(l=20, r=20, t=40, b=20)
     )
     return fig
 
 
+def get_chart_colors():
+    """Lấy màu sắc cho biểu đồ theo theme hiện tại"""
+    theme = st.session_state.get('current_theme', 'dark')
+    if theme == 'light':
+        return {
+            'text': '#1e293b',
+            'title': '#0f172a',
+            'grid': 'rgba(51, 65, 85, 0.12)',
+            'line': 'rgba(51, 65, 85, 0.3)',
+            'bg': 'rgba(255,255,255,0.5)'
+        }
+    else:
+        return {
+            'text': '#cbd5e1',
+            'title': '#f1f5f9',
+            'grid': 'rgba(148, 163, 184, 0.12)',
+            'line': 'rgba(148, 163, 184, 0.2)',
+            'bg': 'rgba(0,0,0,0)'
+        }
+
+
 def create_time_series_chart(df: pd.DataFrame, columns: list, colors: list, 
                               title: str, y_label: str) -> go.Figure:
-    """Tạo biểu đồ time series"""
+    """Tạo biểu đồ time series - Fixed size, theme-aware"""
+    colors_theme = get_chart_colors()
     fig = go.Figure()
     
+    # Giới hạn số điểm hiển thị để biểu đồ không quá rộng
+    max_points = 200
+    if len(df) > max_points:
+        df_plot = df.iloc[-max_points:]  # Lấy 200 điểm mới nhất
+    else:
+        df_plot = df
+    
     for col, color in zip(columns, colors):
-        if col in df.columns:
+        if col in df_plot.columns:
             fig.add_trace(go.Scatter(
-                x=df['datetime'] if 'datetime' in df.columns else df['time'],
-                y=df[col],
+                x=df_plot['datetime'] if 'datetime' in df_plot.columns else df_plot['time'],
+                y=df_plot[col],
                 name=col,
                 line=dict(color=color, width=2),
                 fill='tozeroy',
-                fillcolor=color.replace('rgb', 'rgba').replace(')', ', 0.1)')
+                fillcolor=color.replace('rgb', 'rgba').replace(')', ', 0.15)')
             ))
     
     fig.update_layout(
-        title=dict(text=title, font=dict(size=16, color='#f1f5f9')),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#94a3b8'),
+        title=dict(text=title, font=dict(size=14, color=colors_theme['title'])),
+        paper_bgcolor=colors_theme['bg'],
+        plot_bgcolor=colors_theme['bg'],
+        font=dict(color=colors_theme['text'], size=11),
         xaxis=dict(
-            gridcolor='rgba(148, 163, 184, 0.1)',
+            gridcolor=colors_theme['grid'],
             showline=True,
-            linecolor='rgba(148, 163, 184, 0.2)'
+            linecolor=colors_theme['line'],
+            tickfont=dict(size=10),
+            nticks=8  # Giới hạn số tick trên trục X
         ),
         yaxis=dict(
-            title=y_label,
-            gridcolor='rgba(148, 163, 184, 0.1)',
+            title=dict(text=y_label, font=dict(size=11)),
+            gridcolor=colors_theme['grid'],
             showline=True,
-            linecolor='rgba(148, 163, 184, 0.2)'
+            linecolor=colors_theme['line'],
+            tickfont=dict(size=10)
         ),
         legend=dict(
             orientation="h",
             yanchor="bottom",
             y=1.02,
             xanchor="right",
-            x=1
+            x=1,
+            font=dict(size=10)
         ),
-        height=350,
-        margin=dict(l=20, r=20, t=60, b=40)
+        height=280,  # Fixed height
+        margin=dict(l=50, r=20, t=50, b=40),
+        autosize=True
     )
     return fig
 
 
 def create_performance_chart(df: pd.DataFrame, analyzer: SolarPanelAnalyzer) -> go.Figure:
-    """Tạo biểu đồ hiệu suất"""
+    """Tạo biểu đồ hiệu suất - Fixed size, theme-aware"""
+    colors_theme = get_chart_colors()
+    
+    # Giới hạn số điểm
+    max_points = 200
+    if len(df) > max_points:
+        df = df.iloc[-max_points:]
+    
     # Tính PR cho mỗi điểm
     prs = []
     efficiencies = []
@@ -815,7 +898,7 @@ def create_performance_chart(df: pd.DataFrame, analyzer: SolarPanelAnalyzer) -> 
     fig = make_subplots(
         rows=2, cols=1,
         subplot_titles=('Performance Ratio (%)', 'Hiệu suất chuyển đổi (%)'),
-        vertical_spacing=0.15
+        vertical_spacing=0.18
     )
     
     # Performance Ratio
@@ -851,17 +934,18 @@ def create_performance_chart(df: pd.DataFrame, analyzer: SolarPanelAnalyzer) -> 
         row=2, col=1
     )
     
+    colors_theme = get_chart_colors()
     fig.update_layout(
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#94a3b8'),
-        height=500,
+        paper_bgcolor=colors_theme['bg'],
+        plot_bgcolor=colors_theme['bg'],
+        font=dict(color=colors_theme['text']),
+        height=380,  # Fixed height
         showlegend=False,
-        margin=dict(l=20, r=20, t=40, b=40)
+        margin=dict(l=50, r=20, t=40, b=40)
     )
     
-    fig.update_xaxes(gridcolor='rgba(148, 163, 184, 0.1)')
-    fig.update_yaxes(gridcolor='rgba(148, 163, 184, 0.1)')
+    fig.update_xaxes(gridcolor=colors_theme['grid'], tickfont=dict(size=10), nticks=8)
+    fig.update_yaxes(gridcolor=colors_theme['grid'], tickfont=dict(size=10))
     
     return fig
 
@@ -1511,17 +1595,18 @@ def show_daily_analysis(analyzer: SolarPanelAnalyzer, date: str, clean_method: s
             name='Công suất TB'
         ))
         
+        colors_theme = get_chart_colors()
         fig.update_layout(
             title='Công suất trung bình theo giờ',
             xaxis_title='Giờ',
             yaxis_title='mW',
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#94a3b8'),
-            height=300
+            paper_bgcolor=colors_theme['bg'],
+            plot_bgcolor=colors_theme['bg'],
+            font=dict(color=colors_theme['text']),
+            height=280
         )
-        fig.update_xaxes(gridcolor='rgba(148, 163, 184, 0.1)')
-        fig.update_yaxes(gridcolor='rgba(148, 163, 184, 0.1)')
+        fig.update_xaxes(gridcolor=colors_theme['grid'], nticks=12)
+        fig.update_yaxes(gridcolor=colors_theme['grid'])
         
         st.plotly_chart(fig, use_container_width=True)
     
@@ -1566,17 +1651,18 @@ def show_daily_analysis(analyzer: SolarPanelAnalyzer, date: str, clean_method: s
     fig.add_trace(go.Scatter(x=df['datetime'], y=prs, name='PR',
                              fill='tozeroy', line=dict(color='#a855f7')), row=2, col=2)
     
+    colors_theme = get_chart_colors()
     fig.update_layout(
-        height=600,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#94a3b8'),
+        height=450,  # Fixed height
+        paper_bgcolor=colors_theme['bg'],
+        plot_bgcolor=colors_theme['bg'],
+        font=dict(color=colors_theme['text'], size=10),
         showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5)
+        legend=dict(orientation="h", yanchor="bottom", y=-0.12, xanchor="center", x=0.5, font=dict(size=9))
     )
     
-    fig.update_xaxes(gridcolor='rgba(148, 163, 184, 0.1)')
-    fig.update_yaxes(gridcolor='rgba(148, 163, 184, 0.1)')
+    fig.update_xaxes(gridcolor=colors_theme['grid'], tickfont=dict(size=9), nticks=8)
+    fig.update_yaxes(gridcolor=colors_theme['grid'], tickfont=dict(size=9))
     
     st.plotly_chart(fig, use_container_width=True)
     
@@ -1676,16 +1762,17 @@ def show_historical_comparison(analyzer: SolarPanelAnalyzer, start_date: str, en
     fig.add_trace(go.Scatter(x=daily_stats['date'], y=daily_stats['temp_avg'],
                             name='Temp', line=dict(color='#ef4444'), fill='tozeroy'), row=2, col=2)
     
+    colors_theme = get_chart_colors()
     fig.update_layout(
-        height=500,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#94a3b8'),
+        height=380,  # Fixed height
+        paper_bgcolor=colors_theme['bg'],
+        plot_bgcolor=colors_theme['bg'],
+        font=dict(color=colors_theme['text'], size=10),
         showlegend=False
     )
     
-    fig.update_xaxes(gridcolor='rgba(148, 163, 184, 0.1)')
-    fig.update_yaxes(gridcolor='rgba(148, 163, 184, 0.1)')
+    fig.update_xaxes(gridcolor=colors_theme['grid'], tickfont=dict(size=9), nticks=8)
+    fig.update_yaxes(gridcolor=colors_theme['grid'], tickfont=dict(size=9))
     
     st.plotly_chart(fig, use_container_width=True)
     
@@ -1752,16 +1839,17 @@ def show_historical_comparison(analyzer: SolarPanelAnalyzer, start_date: str, en
             fig.add_hline(y=70, line_dash="dash", line_color="#facc15", 
                          annotation_text="Ngưỡng cảnh báo")
             
+            colors_theme = get_chart_colors()
             fig.update_layout(
                 title='Performance Ratio theo ngày',
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(color='#94a3b8'),
-                height=300,
+                paper_bgcolor=colors_theme['bg'],
+                plot_bgcolor=colors_theme['bg'],
+                font=dict(color=colors_theme['text']),
+                height=280,
                 yaxis_title='PR (%)'
             )
-            fig.update_xaxes(gridcolor='rgba(148, 163, 184, 0.1)')
-            fig.update_yaxes(gridcolor='rgba(148, 163, 184, 0.1)')
+            fig.update_xaxes(gridcolor=colors_theme['grid'], nticks=10)
+            fig.update_yaxes(gridcolor=colors_theme['grid'])
             
             st.plotly_chart(fig, use_container_width=True)
     
