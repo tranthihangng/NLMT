@@ -461,6 +461,10 @@ def get_data_status(df: pd.DataFrame, connection_timeout: float = 60.0) -> tuple
     """
     Xác định trạng thái dữ liệu và kiểm tra mất kết nối
     
+    QUAN TRỌNG: Chỉ báo mất kết nối khi đã quá connection_timeout giây không có dữ liệu mới.
+    Hệ thống có thể gửi dữ liệu không liên tục (5-10s/lần hoặc 2-3s/lần), 
+    nên cần đợi đủ thời gian mới báo mất kết nối.
+    
     Args:
         df: DataFrame chứa dữ liệu
         connection_timeout: Thời gian timeout (giây) để coi là mất kết nối (mặc định 60s)
@@ -471,6 +475,7 @@ def get_data_status(df: pd.DataFrame, connection_timeout: float = 60.0) -> tuple
         - is_connected: True nếu còn kết nối, False nếu mất kết nối (>60s không có dữ liệu mới)
     """
     if df.empty:
+        # Không có dữ liệu - không thể kiểm tra thời gian, coi như no_data
         return 'no_data', False
     
     # Kiểm tra thời gian cập nhật - QUAN TRỌNG NHẤT
@@ -489,14 +494,16 @@ def get_data_status(df: pd.DataFrame, connection_timeout: float = 60.0) -> tuple
         except:
             pass
     
-    # Nếu không tìm thấy thời gian cập nhật, coi như mất kết nối
+    # Nếu không tìm thấy thời gian cập nhật, không thể kiểm tra
+    # Không báo mất kết nối ngay, chỉ báo là no_data
     if last_update is None:
-        return 'disconnected', False
+        return 'no_data', False
     
     # Tính thời gian chênh lệch
     time_diff = (now - last_update).total_seconds()
     
-    # MẤT KẾT NỐI nếu không có dữ liệu mới trong connection_timeout giây
+    # QUAN TRỌNG: CHỈ báo mất kết nối khi đã quá connection_timeout giây
+    # Nếu chưa quá 60s, vẫn coi là còn kết nối (có thể sensor đang gửi chậm)
     if time_diff > connection_timeout:
         return 'disconnected', False
     
@@ -1254,11 +1261,21 @@ def show_realtime_view(analyzer: SolarPanelAnalyzer, date: str, hour: int, clean
     #     status_text, status_class = status_labels.get(data_status, ('❓', 'data-status'))
     #     st.markdown(f'<span class="{status_class}">{status_text}</span>', unsafe_allow_html=True)
     
-    # Hiển thị cảnh báo mất kết nối - NỔI BẬT
-    if not is_connected:
-        st.error("""
-        ⚠️ **HỆ THỐNG MẤT KẾT NỐI**
-        """)
+    # Hiển thị cảnh báo mất kết nối - CHỈ khi đã quá 60 giây
+    # Lưu ý: Hệ thống có thể gửi dữ liệu không liên tục (5-10s/lần hoặc 2-3s/lần)
+    # Nên chỉ báo mất kết nối khi đã quá 60 giây không có dữ liệu mới
+    if not is_connected and data_status == 'disconnected':
+        # Tính thời gian mất kết nối để hiển thị
+        if 'datetime' in df.columns and not df.empty:
+            last_update = df['datetime'].max()
+            time_diff = (datetime.now() - last_update).total_seconds()
+            if time_diff > 60.0:  # Đảm bảo đã quá 60s
+                minutes = int(time_diff // 60)
+                seconds = int(time_diff % 60)
+                time_str = f"{minutes} phút {seconds} giây" if minutes > 0 else f"{seconds} giây"
+                st.error(f"""
+                ⚠️ **HỆ THỐNG MẤT KẾT NỐI**
+                """)
     
     # Nếu mất kết nối, đặt TẤT CẢ về 0 ngay lập tức (không cần lấy dữ liệu)
     if not is_connected:
